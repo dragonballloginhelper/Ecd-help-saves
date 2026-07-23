@@ -25,7 +25,7 @@ function generateCode() {
   return result;
 }
 
-// Main HTML User Interface with animations and info modal
+// Main HTML User Interface with animations, info modal, and username input
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -127,7 +127,10 @@ app.get('/', (req, res) => {
                 color: #f8fafc;
                 border: 1px solid #334155;
                 text-align: center;
+            }
+            input[name="code"] {
                 letter-spacing: 2px;
+                text-transform: uppercase;
             }
             input[type="text"]:focus {
                 border-color: #38bdf8;
@@ -236,6 +239,7 @@ app.get('/', (req, res) => {
             <div class="section">
                 <h3>Dump ECD</h3>
                 <form action="/upload-discord" method="POST" enctype="multipart/form-data">
+                    <input type="text" name="username" placeholder="dbl user" required>
                     <input type="file" name="file" required>
                     <button type="submit">Upload & Get Code</button>
                 </form>
@@ -244,7 +248,7 @@ app.get('/', (req, res) => {
             <div>
                 <h3>Retrieve File</h3>
                 <form action="/retrieve" method="POST">
-                    <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" style="text-transform:uppercase;" required>
+                    <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required>
                     <button type="submit">Download File</button>
                 </form>
             </div>
@@ -281,13 +285,44 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Handle Upload, Discord Forwarding, and Code Generation
+// Handle Upload, Validation, Discord Forwarding, and Code Generation
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
+    const username = req.body.username ? req.body.username.trim() : 'Unknown';
 
     if (!file) {
       return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
+    }
+
+    // Validate filename format: ecd followed by numbers (case-insensitive for 'ecd')
+    const filenameRegex = /^ecd\d+/i;
+    if (!filenameRegex.test(file.originalname)) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Invalid File Format</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                .container { background: #1e293b; padding: 35px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 400px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); }
+                h2 { color: #ef4444; margin-top: 0; }
+                p { color: #cbd5e1; font-size: 14px; line-height: 1.5; }
+                a { color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 15px; font-weight: 500; }
+                a:hover { color: #7dd3fc; text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>Failed to Dump</h2>
+                <p>Make sure it's a valid ECD file format (e.g., <code>ecd123.extension</code>).</p>
+                <p>If it's a genuine ECD file and you are facing issues, please contact us!</p>
+                <a href="/">← Go Back</a>
+            </div>
+        </body>
+        </html>
+      `);
     }
 
     // Generate unique 6-character retrieval code
@@ -302,11 +337,11 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       buffer: file.buffer
     });
 
-    // Forward file to Discord webhook
+    // Forward file to Discord webhook with username included
     const formData = new FormData();
     formData.append('file', file.buffer, { filename: file.originalname });
     formData.append('payload_json', JSON.stringify({ 
-      content: `📦 **New File Uploaded**\nFilename: \`${file.originalname}\`\nRetrieval Code: \`${code}\`` 
+      content: `📦 **New File Uploaded**\n👤 Username: \`${username}\`\nFilename: \`${file.originalname}\`\nRetrieval Code: \`${code}\`` 
     }));
 
     const response = await fetch(DEFAULT_WEBHOOK_URL, {
@@ -373,3 +408,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is live and running on port ${PORT}`);
 });
+           
