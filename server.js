@@ -15,6 +15,12 @@ const fileStore = new Map();
 const verificationCodes = new Map(); 
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 
+// Discord Bot Token and OAuth2 Configuration with hardcoded fallbacks
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || 'MTUyOTg3MDI2OTcyNzExNzQwMw.Gi5ozp.LrUwnKGhrfcKl7OGeVSYMYenHXFgYkj-uII5Ak';
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1529870269727117403';
+const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '30lUty1aWyE43yz2uVOUCT7mR7wYUMGB';
+const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://ecd-help-saves.onrender.com/auth/discord/callback';
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
@@ -46,12 +52,45 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/auth/google', (req, res) => {
-  req.session.user = {
-    email: 'verified.user@gmail.com',
-    name: 'Verified Dumper'
-  };
-  res.redirect('/?loggedin=true');
+app.get('/auth/discord', (req, res) => {
+  const discordAuthUrl = 'https://discord.com/api/oauth2/authorize?client_id=' + CLIENT_ID + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI) + '&response_type=code&scope=identify';
+  res.redirect(discordAuthUrl);
+});
+
+app.get('/auth/discord/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.redirect('/?error=nodiscordcode');
+
+  try {
+    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: REDIRECT_URI,
+      })
+    });
+
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return res.redirect('/?error=tokenfailed');
+
+    const userRes = await fetch('https://discord.com/api/users/@me', {
+      headers: { authorization: 'Bearer ' + tokenData.access_token }
+    });
+    const userData = await userRes.json();
+
+    req.session.user = {
+      id: userData.id,
+      username: userData.username + (userData.discriminator && userData.discriminator !== '0' ? '#' + userData.discriminator : '')
+    };
+    res.redirect('/?loggedin=true');
+  } catch (err) {
+    console.error('Discord OAuth error:', err);
+    res.redirect('/?error=servererror');
+  }
 });
 
 app.get('/auth/logout', (req, res) => {
@@ -60,32 +99,66 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
-app.post('/send-code', (req, res) => {
-  const email = req.body.email ? req.body.email.trim() : '';
-  if (!email || !email.includes('@') || !email.endsWith('@gmail.com')) {
-    return res.status(400).json({ success: false, message: 'Please enter a valid Gmail address.' });
+// Helper function to send Discord DM using Bot Token
+async function sendDiscordDM(discordUserId, messageContent) {
+  try {
+    const channelRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bot ' + DISCORD_BOT_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ recipient_id: discordUserId })
+    });
+    const channelData = await channelRes.json();
+    if (!channelData.id) return false;
+
+    const msgRes = await fetch('https://discord.com/api/v10/channels/' + channelData.id + '/messages', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bot ' + DISCORD_BOT_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ content: messageContent })
+    });
+    
+    return msgRes.ok;
+  } catch (err) {
+    console.error('Failed to send Discord DM:', err);
+    return false;
+  }
+}
+
+app.post('/send-discord-code', async (req, res) => {
+  const user = req.session.user;
+  if (!user || !user.id) {
+    return res.status(401).json({ success: false, message: 'Please login with Discord first.' });
   }
 
   const vCode = Math.floor(100000 + Math.random() * 900000).toString();
-  verificationCodes.set(email, {
+  verificationCodes.set(user.id, {
     code: vCode,
     expires: Date.now() + 5 * 60 * 1000
   });
 
-  console.log('\n========================================');
-  console.log('[SIMULATED MAILER] To: ' + email);
-  console.log('[SIMULATED MAILER] Your ECD Dump Verification Code is: ' + vCode);
-  console.log('========================================\n');
+  const dmSuccess = await sendDiscordDM(user.id, '🔐 **ECD Dump Verification Code**\nYour code is: `' + vCode + '`\nThis code expires in 5 minutes.');
 
-  res.json({ success: true, message: 'Verification code sent to email.' });
+  if (!dmSuccess) {
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send DM. Make sure your DMs are open!' 
+    });
+  }
+
+  res.json({ success: true, message: 'Verification code sent to your Discord DMs!' });
 });
 
 app.get('/', (req, res) => {
   const user = req.session.user || null;
   
   let authBannerHtml = user ? 
-    '<span>Verified: <strong>' + user.email + '</strong></span><a href="/auth/logout" class="logout-btn">Logout</a>' :
-    '<span>Guest Mode (1 Upload / 24h)</span><a href="/auth/google" class="google-btn">Login Google</a>';
+    '<span>Verified Discord: <strong>' + user.username + '</strong></span><a href="/auth/logout" class="logout-btn">Logout</a>' :
+    '<span>Guest Mode (1 Upload / 24h)</span><a href="/auth/discord" class="discord-btn">Login Discord</a>';
 
   let pinSectionHtml = user ? 
     '<input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">' : 
@@ -97,18 +170,19 @@ app.get('/', (req, res) => {
     '<div class="toggle-option active" id="visPrivate" onclick="setVisibility(\'private\')">Private</div>' +
     '</div><input type="hidden" name="visibility" id="visibilityInput" value="private">' :
     '<div style="background:#0f172a; border:1px solid #334155; padding:10px; border-radius:8px; font-size:12px; color:#94a3b8; margin:5px 0; text-align:center;">' +
-    '🔒 Locked to <strong>Private</strong> (Login via Google to change)</div>' +
+    '🔒 Locked to <strong>Private</strong> (Login via Discord to change)</div>' +
     '<input type="hidden" name="visibility" id="visibilityInput" value="private">';
 
-  let guestEmailSectionHtml = !user ? 
+  let verificationSectionHtml = user ? 
     '<div style="margin: 12px 0; text-align: left;">' +
-    '<label style="font-size:12px; color:#94a3b8;">Guest Gmail Verification:</label>' +
+    '<label style="font-size:12px; color:#38bdf8;">Discord DM Verification Required:</label>' +
     '<div style="display: flex; gap: 6px; margin-top: 5px;">' +
-    '<input type="email" id="guestEmail" name="email" placeholder="name@gmail.com" style="margin:0; flex:1;" required>' +
-    '<button type="button" onclick="sendVerificationCode()" style="width: auto; margin:0; padding: 0 12px; font-size: 12px;">Send Code</button>' +
+    '<button type="button" onclick="sendDiscordVerificationCode()" style="margin:0; font-size: 12px; background:#5865F2;">Send Code to Discord DM</button>' +
     '</div>' +
-    '<input type="text" name="emailCode" placeholder="Enter 6-digit Email Code" maxlength="6" style="margin-top:8px;" required>' +
-    '</div>' : '';
+    '<input type="text" name="discordCode" placeholder="Enter 6-digit Code from DMs" maxlength="6" style="margin-top:8px;" required>' +
+    '</div>' : 
+    '<div style="background:#0f172a; border:1px solid #334155; padding:10px; border-radius:8px; font-size:12px; color:#94a3b8; margin:10px 0; text-align:center;">' +
+    '⚠️ Please <strong>Login via Discord</strong> above to upload files.</div>';
 
   res.send(`
     <!DOCTYPE html>
@@ -192,8 +266,8 @@ app.get('/', (req, res) => {
                 justify-content: space-between;
                 align-items: center;
             }
-            .google-btn {
-                background: #ea4335;
+            .discord-btn {
+                background: #5865F2;
                 color: white;
                 padding: 6px 12px;
                 border-radius: 6px;
@@ -204,7 +278,7 @@ app.get('/', (req, res) => {
                 align-items: center;
                 gap: 6px;
             }
-            .google-btn:hover { background: #d33828; }
+            .discord-btn:hover { background: #4752C4; }
             .logout-btn {
                 color: #ef4444;
                 text-decoration: none;
@@ -528,7 +602,7 @@ app.get('/', (req, res) => {
                     <div style="text-align: left; font-size: 12px; color: #94a3b8; margin-top: 12px;">File Visibility:</div>
                     ${visibilitySectionHtml}
 
-                    ${guestEmailSectionHtml}
+                    ${verificationSectionHtml}
 
                     <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
                         <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
@@ -583,27 +657,20 @@ app.get('/', (req, res) => {
         </div>
 
         <script>
-            async function sendVerificationCode() {
-                const emailInput = document.getElementById('guestEmail');
-                const email = emailInput.value.trim();
-                if(!email || !email.endsWith('@gmail.com')) {
-                    alert('Please enter a valid Gmail address first.');
-                    return;
-                }
+            async function sendDiscordVerificationCode() {
                 try {
-                    const res = await fetch('/send-code', {
+                    const res = await fetch('/send-discord-code', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email })
+                        headers: { 'Content-Type': 'application/json' }
                     });
                     const data = await res.json();
                     if(data.success) {
-                        alert('Verification code sent! Check server console / logs for mock delivery.');
+                        alert('Verification code sent directly to your Discord DMs! Check your messages.');
                     } else {
-                        alert(data.message || 'Failed to send code.');
+                        alert(data.message || 'Failed to send verification code.');
                     }
                 } catch(err) {
-                    alert('Network error sending code.');
+                    alert('Network error sending verification code.');
                 }
             }
 
@@ -673,7 +740,7 @@ app.get('/', (req, res) => {
                 terminalOverlay.classList.add('active');
 
                 let steps = [
-                    "Verifying email & human captcha signature...",
+                    "Verifying Discord DM signature token...",
                     "Initializing AI Engine [" + aiModeVal.toUpperCase() + "]...",
                     "Sanitizing network socket hooks...",
                     "Stripping telemetry signatures...",
@@ -730,47 +797,38 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const user = req.session.user || null;
 
     if (!user) {
-      const email = req.body.email ? req.body.email.trim() : '';
-      const emailCode = req.body.emailCode ? req.body.emailCode.trim() : '';
-      
-      const record = verificationCodes.get(email);
-      if (!record || record.code !== emailCode || Date.now() > record.expires) {
-        if (!global.timeoutMap) global.timeoutMap = new Map();
-        global.timeoutMap.set(clientIp, Date.now() + 10 * 60 * 1000);
-
-        return res.status(403).send(
-          '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Verification Failed</title></head>' +
-          '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
-          '<h2 style="color:#ef4444;">Verification Failed</h2>' +
-          '<p>Incorrect or expired verification code provided.</p>' +
-          '<p style="color:#f59e0b;">You have been placed on a <strong>10-minute timeout</strong> from accessing all tools.</p>' +
-          '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
-        );
-      }
-      verificationCodes.delete(email);
-
-      const now = Date.now();
-      if (!global.guestLimits) global.guestLimits = new Map();
-      if (global.guestLimits.has(clientIp)) {
-        const lastUpload = global.guestLimits.get(clientIp);
-        if (now - lastUpload < 24 * 60 * 60 * 1000) {
-          return res.status(429).send(
-            '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Limit Reached</title></head>' +
-            '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
-            '<h2>Guest Limit Reached</h2>' +
-            '<p>Guests are restricted to 1 upload every 24 hours. Please log in with Google for full access.</p>' +
-            '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
-          );
-        }
-      }
-      global.guestLimits.set(clientIp, now);
+      return res.status(401).send(
+        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Unauthorized</title></head>' +
+        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
+        '<h2 style="color:#ef4444;">Authentication Required</h2>' +
+        '<p>Please log in with Discord and verify via DM.</p>' +
+        '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
+      );
     }
+
+    const discordCode = req.body.discordCode ? req.body.discordCode.trim() : '';
+    const record = verificationCodes.get(user.id);
+
+    if (!record || record.code !== discordCode || Date.now() > record.expires) {
+      if (!global.timeoutMap) global.timeoutMap = new Map();
+      global.timeoutMap.set(clientIp, Date.now() + 10 * 60 * 1000);
+
+      return res.status(403).send(
+        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Verification Failed</title></head>' +
+        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
+        '<h2 style="color:#ef4444;">Verification Failed</h2>' +
+        '<p>Incorrect or expired Discord DM verification code provided.</p>' +
+        '<p style="color:#f59e0b;">You have been placed on a <strong>10-minute timeout</strong>.</p>' +
+        '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
+      );
+    }
+    verificationCodes.delete(user.id);
 
     const file = req.file;
     const username = req.body.username ? req.body.username.trim() : 'Unknown';
-    const pin = user && req.body.pin ? req.body.pin.trim() : '';
+    const pin = req.body.pin ? req.body.pin.trim() : '';
     const aiMode = req.body.aiMode ? req.body.aiMode.trim() : 'standard';
-    const visibility = user ? (req.body.visibility === 'public' ? 'public' : 'private') : 'private';
+    const visibility = req.body.visibility === 'public' ? 'public' : 'private';
 
     if (!file) {
       return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
@@ -803,8 +861,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       timestamp: Date.now()
     });
 
-    const guestEmailMeta = !user ? ' | Guest Gmail: `' + req.body.email + '`' : '';
-    const identityTag = user ? 'Verified Google: `' + user.email + '`' : 'Guest IP: `' + clientIp + '`' + guestEmailMeta;
+    const identityTag = 'Verified Discord: `' + user.username + '` (ID: `' + user.id + '`)';
     let webhookContent = '📦 **New File Uploaded**\n👤 User: `' + username + '`\n🔐 Identity: ' + identityTag + '\n👁️ Visibility: `' + visibility + '`\n⚙️ Mode: `' + aiMode + '`\nFilename: `' + file.originalname + '`\nCode: `' + code + '`';
 
     const formData = new FormData();
