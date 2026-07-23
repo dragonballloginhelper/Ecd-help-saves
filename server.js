@@ -9,8 +9,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 // In-memory storage for 6-character code retrieval
 const fileStore = new Map();
 
-// Your integrated Discord Webhook URL
-const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1346067884879585351/3aJ_tIqP29Xk4gCg0Z8Vq8jT2vL1mY9xK5wN3hF6sD4bC2pQ7eR8tF1vW9zA3bX5";
+// Updated Discord Webhook URL
+const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -163,4 +163,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is live and running on port ${PORT}`);
 });
-    
