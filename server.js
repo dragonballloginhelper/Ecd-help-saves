@@ -16,10 +16,9 @@ const upload = multer({
 const fileStore = new Map();
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 
-// Replace these placeholders with your actual Discord Application credentials
-const CLIENT_ID = process.env.DISCORD_CLIENT_ID || 'YOUR_CLIENT_ID';
-const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || 'YOUR_CLIENT_SECRET';
-const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://localhost:3000/auth/discord/callback';
+const CLIENT_ID = '1529870269727117403';
+const CLIENT_SECRET = '08_dAGu6VMZZA9Gjd9t8DPK9iK1AqTda';
+const REDIRECT_URI = 'https://localhost:3000/auth/discord/callback';
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
