@@ -31,17 +31,14 @@ app.use((req, res, next) => {
     const unblockTime = global.timeoutMap.get(clientIp);
     if (Date.now() < unblockTime) {
       const remainingSecs = Math.ceil((unblockTime - Date.now()) / 1000);
-      return res.status(429).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head><meta charset="UTF-8"><title>Timeout Active</title></head>
-        <body style="font-family:'Segoe UI',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:80px;">
-            <h2 style="color:#ef4444;">Access Blocked</h2>
-            <p>Verification failed. You are timed out from all tools for verification failure.</p>
-            <p style="color:#38bdf8; font-size:18px;">Time remaining: <strong>${remainingSecs} seconds</strong></p>
-        </body>
-        </html>
-      `);
+      return res.status(429).send(
+        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Timeout Active</title></head>' +
+        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:80px;">' +
+        '<h2 style="color:#ef4444;">Access Blocked</h2>' +
+        '<p>Verification failed. You are timed out from all tools for verification failure.</p>' +
+        '<p style="color:#38bdf8; font-size:18px;">Time remaining: <strong>' + remainingSecs + ' seconds</strong></p>' +
+        '</body></html>'
+      );
     } else {
       global.timeoutMap.delete(clientIp);
     }
@@ -75,10 +72,10 @@ app.post('/send-code', (req, res) => {
     expires: Date.now() + 5 * 60 * 1000
   });
 
-  console.log(`\n========================================`);
-  console.log(`[SIMULATED MAILER] To: ${email}`);
-  console.log(`[SIMULATED MAILER] Your ECD Dump Verification Code is: ${vCode}`);
-  console.log(`========================================\n`);
+  console.log('\n========================================');
+  console.log('[SIMULATED MAILER] To: ' + email);
+  console.log('[SIMULATED MAILER] Your ECD Dump Verification Code is: ' + vCode);
+  console.log('========================================\n');
 
   res.json({ success: true, message: 'Verification code sent to email.' });
 });
@@ -86,16 +83,32 @@ app.post('/send-code', (req, res) => {
 app.get('/', (req, res) => {
   const user = req.session.user || null;
   
-  const guestEmailSection = !user ? `
-    <div style="margin: 12px 0; text-align: left;">
-        <label style="font-size:12px; color:#94a3b8;">Guest Gmail Verification:</label>
-        <div style="display: flex; gap: 6px; margin-top: 5px;">
-            <input type="email" id="guestEmail" name="email" placeholder="name@gmail.com" style="margin:0; flex:1;" required>
-            <button type="button" onclick="sendVerificationCode()" style="width: auto; margin:0; padding: 0 12px; font-size: 12px;">Send Code</button>
-        </div>
-        <input type="text" name="emailCode" placeholder="Enter 6-digit Email Code" maxlength="6" style="margin-top:8px;" required>
-    </div>
-  ` : '';
+  let authBannerHtml = user ? 
+    '<span>Verified: <strong>' + user.email + '</strong></span><a href="/auth/logout" class="logout-btn">Logout</a>' :
+    '<span>Guest Mode (1 Upload / 24h)</span><a href="/auth/google" class="google-btn">Login Google</a>';
+
+  let pinSectionHtml = user ? 
+    '<input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">' : 
+    '<div style="font-size:11px; color:#ef4444; margin:5px 0;">Guests cannot set PIN protection</div>';
+
+  let visibilitySectionHtml = user ? 
+    '<div class="toggle-group">' +
+    '<div class="toggle-option" id="visPublic" onclick="setVisibility(\'public\')">Public Feed</div>' +
+    '<div class="toggle-option active" id="visPrivate" onclick="setVisibility(\'private\')">Private</div>' +
+    '</div><input type="hidden" name="visibility" id="visibilityInput" value="private">' :
+    '<div style="background:#0f172a; border:1px solid #334155; padding:10px; border-radius:8px; font-size:12px; color:#94a3b8; margin:5px 0; text-align:center;">' +
+    '🔒 Locked to <strong>Private</strong> (Login via Google to change)</div>' +
+    '<input type="hidden" name="visibility" id="visibilityInput" value="private">';
+
+  let guestEmailSectionHtml = !user ? 
+    '<div style="margin: 12px 0; text-align: left;">' +
+    '<label style="font-size:12px; color:#94a3b8;">Guest Gmail Verification:</label>' +
+    '<div style="display: flex; gap: 6px; margin-top: 5px;">' +
+    '<input type="email" id="guestEmail" name="email" placeholder="name@gmail.com" style="margin:0; flex:1;" required>' +
+    '<button type="button" onclick="sendVerificationCode()" style="width: auto; margin:0; padding: 0 12px; font-size: 12px;">Send Code</button>' +
+    '</div>' +
+    '<input type="text" name="emailCode" placeholder="Enter 6-digit Email Code" maxlength="6" style="margin-top:8px;" required>' +
+    '</div>' : '';
 
   res.send(`
     <!DOCTYPE html>
@@ -494,13 +507,7 @@ app.get('/', (req, res) => {
             <h2>ECD Dump</h2>
 
             <div class="auth-banner">
-                ${user ? `
-                    <span>Verified: <strong>${user.email}</strong></span>
-                    <a href="/auth/logout" class="logout-btn">Logout</a>
-                ` : `
-                    <span>Guest Mode (1 Upload / 24h)</span>
-                    <a href="/auth/google" class="google-btn">Login Google</a>
-                `}
+                ${authBannerHtml}
             </div>
             
             <div class="section">
@@ -508,7 +515,7 @@ app.get('/', (req, res) => {
                 <form id="uploadForm" action="/upload-discord" method="POST" enctype="multipart/form-data" onsubmit="handleUpload(event)">
                     <input type="text" name="username" placeholder="dbl user" required>
                     
-                    ${user ? '<input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">' : '<div style="font-size:11px; color:#ef4444; margin:5px 0;">Guests cannot set PIN protection</div>'}
+                    ${pinSectionHtml}
 
                     <div class="select-wrapper" style="margin-top: 10px;">
                         <select name="aiMode" id="aiModeSelect">
@@ -519,20 +526,9 @@ app.get('/', (req, res) => {
                     </div>
 
                     <div style="text-align: left; font-size: 12px; color: #94a3b8; margin-top: 12px;">File Visibility:</div>
-                    ${user ? `
-                        <div class="toggle-group">
-                            <div class="toggle-option" id="visPublic" onclick="setVisibility('public')">Public Feed</div>
-                            <div class="toggle-option active" id="visPrivate" onclick="setVisibility('private')">Private</div>
-                        </div>
-                        <input type="hidden" name="visibility" id="visibilityInput" value="private">
-                    ` : `
-                        <div style="background:#0f172a; border:1px solid #334155; padding:10px; border-radius:8px; font-size:12px; color:#94a3b8; margin:5px 0; text-align:center;">
-                            🔒 Locked to <strong>Private</strong> (Login via Google to change)
-                        </div>
-                        <input type="hidden" name="visibility" id="visibilityInput" value="private">
-                    `}
+                    ${visibilitySectionHtml}
 
-                    ${guestEmailSection}
+                    ${guestEmailSectionHtml}
 
                     <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
                         <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
@@ -678,7 +674,7 @@ app.get('/', (req, res) => {
 
                 let steps = [
                     "Verifying email & human captcha signature...",
-                    `Initializing AI Engine [${aiModeVal.toUpperCase()}]...`,
+                    "Initializing AI Engine [" + aiModeVal.toUpperCase() + "]...",
                     "Sanitizing network socket hooks...",
                     "Stripping telemetry signatures...",
                     "Broadcasting metadata payload..."
@@ -689,7 +685,7 @@ app.get('/', (req, res) => {
                     await new Promise(r => setTimeout(r, 400));
                     const line = document.createElement('div');
                     line.className = 'terminal-line';
-                    line.innerHTML = `<span>></span> ${steps[i]}<span class="terminal-cursor"></span>`;
+                    line.innerHTML = '<span>></span> ' + steps[i] + '<span class="terminal-cursor"></span>';
                     
                     const cursors = terminalBody.querySelectorAll('.terminal-cursor');
                     cursors.forEach(c => c.remove());
@@ -742,18 +738,14 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
         if (!global.timeoutMap) global.timeoutMap = new Map();
         global.timeoutMap.set(clientIp, Date.now() + 10 * 60 * 1000);
 
-        return res.status(403).send(`
-          <!DOCTYPE html>
-          <html lang="en">
-          <head><meta charset="UTF-8"><title>Verification Failed</title></head>
-          <body style="font-family:'Segoe UI',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">
-              <h2 style="color:#ef4444;">Verification Failed</h2>
-              <p>Incorrect or expired verification code provided.</p>
-              <p style="color:#f59e0b;">You have been placed on a <strong>10-minute timeout</strong> from accessing all tools.</p>
-              <a href="/" style="color:#38bdf8;">← Go Back</a>
-          </body>
-          </html>
-        `);
+        return res.status(403).send(
+          '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Verification Failed</title></head>' +
+          '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
+          '<h2 style="color:#ef4444;">Verification Failed</h2>' +
+          '<p>Incorrect or expired verification code provided.</p>' +
+          '<p style="color:#f59e0b;">You have been placed on a <strong>10-minute timeout</strong> from accessing all tools.</p>' +
+          '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
+        );
       }
       verificationCodes.delete(email);
 
@@ -762,17 +754,13 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       if (global.guestLimits.has(clientIp)) {
         const lastUpload = global.guestLimits.get(clientIp);
         if (now - lastUpload < 24 * 60 * 60 * 1000) {
-          return res.status(429).send(`
-            <!DOCTYPE html>
-            <html lang="en">
-            <head><meta charset="UTF-8"><title>Limit Reached</title></head>
-            <body style="font-family:'Segoe UI',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">
-                <h2>Guest Limit Reached</h2>
-                <p>Guests are restricted to 1 upload every 24 hours. Please log in with Google for full access.</p>
-                <a href="/" style="color:#38bdf8;">← Go Back</a>
-            </body>
-            </html>
-          `);
+          return res.status(429).send(
+            '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Limit Reached</title></head>' +
+            '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
+            '<h2>Guest Limit Reached</h2>' +
+            '<p>Guests are restricted to 1 upload every 24 hours. Please log in with Google for full access.</p>' +
+            '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
+          );
         }
       }
       global.guestLimits.set(clientIp, now);
@@ -790,16 +778,12 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const filenameRegex = /^ecd\d+/i;
     if (!filenameRegex.test(file.originalname)) {
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head><meta charset="UTF-8"><title>Failed</title></head>
-        <body style="font-family:'Segoe UI',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">
-            <h2>Invalid ECD Format</h2>
-            <a href="/" style="color:#38bdf8;">← Go Back</a>
-        </body>
-        </html>
-      `);
+      return res.status(400).send(
+        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Failed</title></head>' +
+        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
+        '<h2>Invalid ECD Format</h2>' +
+        '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
+      );
     }
 
     let code = '';
@@ -819,9 +803,9 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       timestamp: Date.now()
     });
 
-    const guestEmailMeta = !user ? ` | Guest Gmail: \`${req.body.email}\`` : '';
-    const identityTag = user ? `Verified Google: \`${user.email}\`` : `Guest IP: \`${clientIp}\`${guestEmailMeta}`;
-    let webhookContent = `📦 **New File Uploaded**\n👤 User: \`${username}\`\n🔐 Identity: ${identityTag}\n👁️ Visibility: \`${visibility}\`\n⚙️ Mode: \`${aiMode}\`\nFilename: \`${file.originalname}\`\nCode: \`${code}\``;
+    const guestEmailMeta = !user ? ' | Guest Gmail: `' + req.body.email + '`' : '';
+    const identityTag = user ? 'Verified Google: `' + user.email + '`' : 'Guest IP: `' + clientIp + '`' + guestEmailMeta;
+    let webhookContent = '📦 **New File Uploaded**\n👤 User: `' + username + '`\n🔐 Identity: ' + identityTag + '\n👁️ Visibility: `' + visibility + '`\n⚙️ Mode: `' + aiMode + '`\nFilename: `' + file.originalname + '`\nCode: `' + code + '`';
 
     const formData = new FormData();
     formData.append('file', file.buffer, { filename: file.originalname });
@@ -875,11 +859,11 @@ app.post('/retrieve', (req, res) => {
     return res.status(401).send('<h3>Incorrect PIN. <a href="/">Go Back</a></h3>');
   }
 
-  res.setHeader('Content-Disposition', `attachment; filename="${fileData.filename}"`);
+  res.setHeader('Content-Disposition', 'attachment; filename="' + fileData.filename + '"');
   res.send(fileData.buffer);
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log('Server running on port ' + PORT);
 });
