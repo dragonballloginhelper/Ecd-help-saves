@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const fetch = require('node-fetch');
+const FormData = require('form-data');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -64,10 +65,9 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const file = req.file;
 
     if (!file || !webhookUrl) {
-      return res.status(400).send('Missing file or webhook URL.');
+      return res.status(400).send('<h3>Missing file or webhook URL. <a href="/">Go Back</a></h3>');
     }
 
-    const FormData = require('form-data');
     const formData = new FormData();
     formData.append('file', file.buffer, { filename: file.originalname });
     formData.append('payload_json', JSON.stringify({ content: `Uploaded file: **${file.originalname}**` }));
@@ -81,15 +81,17 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     if (response.ok) {
       res.send('<h3>File successfully dumped to Discord! <a href="/">Go Back</a></h3>');
     } else {
-      res.status(500).send('<h3>Failed to send to Discord webhook. Check your URL. <a href="/">Go Back</a></h3>');
+      const errorText = await response.text();
+      console.log('Discord Error:', errorText);
+      res.status(500).send(`<h3>Failed to send to Discord webhook (Status ${response.status}). Check if your Webhook URL is correct. <a href="/">Go Back</a></h3>`);
     }
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Server error during upload.');
+    console.error('Upload Error:', err);
+    res.status(500).send('<h3>Server error during upload. Check Render logs for details. <a href="/">Go Back</a></h3>');
   }
 });
 
-// Code Generation & Retrieval endpoint placeholder logic can be expanded here as needed
+// Retrieve file endpoint
 app.post('/retrieve', (req, res) => {
   const code = req.body.code;
   const fileData = fileStore.get(code);
@@ -100,8 +102,9 @@ app.post('/retrieve', (req, res) => {
   res.send(fileData.buffer);
 });
 
-// Crucial: Bind dynamically to Render's assigned port
+// Bind dynamically to Render's assigned port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is live and running on port ${PORT}`);
 });
+  
