@@ -9,8 +9,21 @@ const upload = multer({ storage: multer.memoryStorage() });
 // In-memory storage for 6-character code retrieval
 const fileStore = new Map();
 
+// PUT YOUR DEFAULT DISCORD WEBHOOK URL HERE
+const DEFAULT_WEBHOOK_URL = "YOUR_DISCORD_WEBHOOK_URL_HERE";
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// Helper function to generate random 6-character alphanumeric code
+function generateCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 // Main HTML User Interface
 app.get('/', (req, res) => {
@@ -23,13 +36,14 @@ app.get('/', (req, res) => {
         <title>ECD Upload</title>
         <style>
             body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-            .container { background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 350px; text-align: center; }
+            .container { background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 380px; text-align: center; }
             h2 { margin-bottom: 20px; color: #38bdf8; }
             input, button { width: 100%; padding: 10px; margin: 10px 0; border-radius: 6px; border: none; box-sizing: border-box; }
-            input { background: #334155; color: white; }
+            input[type="file"] { background: #334155; color: white; }
             button { background: #0284c7; color: white; font-weight: bold; cursor: pointer; }
             button:hover { background: #0369a1; }
             .section { margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }
+            .code-box { background: #0f172a; padding: 12px; border-radius: 6px; font-size: 20px; letter-spacing: 2px; color: #38bdf8; margin: 15px 0; font-weight: bold; user-select: all; }
         </style>
     </head>
     <body>
@@ -37,19 +51,18 @@ app.get('/', (req, res) => {
             <h2>ECD Upload</h2>
             
             <div class="section">
-                <h3>Dump Save (Discord)</h3>
+                <h3>Dump File to Discord</h3>
                 <form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                    <input type="text" name="webhook" placeholder="Discord Webhook URL" required>
                     <input type="file" name="file" required>
-                    <button type="submit">Send to Discord</button>
+                    <button type="submit">Upload & Get Code</button>
                 </form>
             </div>
 
             <div>
                 <h3>Retrieve File</h3>
                 <form action="/retrieve" method="POST">
-                    <input type="text" name="code" placeholder="6-Character Code" maxlength="6" required>
-                    <button type="submit">Get File</button>
+                    <input type="text" name="code" placeholder="Enter 6-Character Code" maxlength="6" style="text-transform:uppercase;" required>
+                    <button type="submit">Download File</button>
                 </form>
             </div>
         </div>
@@ -58,46 +71,91 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Handle Discord Webhook Dump
+// Handle Upload, Discord Forwarding, and Code Generation
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
-    const webhookUrl = req.body.webhook;
     const file = req.file;
 
-    if (!file || !webhookUrl) {
-      return res.status(400).send('<h3>Missing file or webhook URL. <a href="/">Go Back</a></h3>');
+    if (!file) {
+      return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
     }
 
+    if (DEFAULT_WEBHOOK_URL === "YOUR_DISCORD_WEBHOOK_URL_HERE" || !DEFAULT_WEBHOOK_URL) {
+      return res.status(500).send('<h3>Default webhook URL is not configured in server.js! <a href="/">Go Back</a></h3>');
+    }
+
+    // Generate unique 6-character retrieval code
+    let code = generateCode();
+    while (fileStore.has(code)) {
+      code = generateCode();
+    }
+
+    // Save file buffer and metadata in memory map
+    fileStore.set(code, {
+      filename: file.originalname,
+      buffer: file.buffer
+    });
+
+    // Forward file to Discord webhook
     const formData = new FormData();
     formData.append('file', file.buffer, { filename: file.originalname });
-    formData.append('payload_json', JSON.stringify({ content: `Uploaded file: **${file.originalname}**` }));
+    formData.append('payload_json', JSON.stringify({ 
+      content: `📦 **New File Uploaded**\nFilename: \`${file.originalname}\`\nRetrieval Code: \`${code}\`` 
+    }));
 
-    const response = await fetch(webhookUrl, {
+    const response = await fetch(DEFAULT_WEBHOOK_URL, {
       method: 'POST',
       body: formData,
       headers: formData.getHeaders()
     });
 
     if (response.ok) {
-      res.send('<h3>File successfully dumped to Discord! <a href="/">Go Back</a></h3>');
+      res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Upload Success</title>
+            <style>
+                body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                .container { background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 380px; text-align: center; }
+                h2 { color: #22c55e; }
+                .code-box { background: #0f172a; padding: 12px; border-radius: 6px; font-size: 24px; letter-spacing: 3px; color: #38bdf8; margin: 15px 0; font-weight: bold; }
+                a { color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 15px; }
+                a:hover { text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>Success!</h2>
+                <p>Your file has been saved and sent to Discord.</p>
+                <p>Use this 6-character code to retrieve it later:</p>
+                <div class="code-box">${code}</div>
+                <a href="/">← Upload Another File</a>
+            </div>
+        </body>
+        </html>
+      `);
     } else {
       const errorText = await response.text();
-      console.log('Discord Error:', errorText);
-      res.status(500).send(`<h3>Failed to send to Discord webhook (Status ${response.status}). Check if your Webhook URL is correct. <a href="/">Go Back</a></h3>`);
+      console.error('Discord Error:', errorText);
+      res.status(500).send(`<h3>Failed to dispatch file to Discord webhook (Status ${response.status}). <a href="/">Go Back</a></h3>`);
     }
   } catch (err) {
     console.error('Upload Error:', err);
-    res.status(500).send('<h3>Server error during upload. Check Render logs for details. <a href="/">Go Back</a></h3>');
+    res.status(500).send('<h3>Server error during upload. Check Render logs. <a href="/">Go Back</a></h3>');
   }
 });
 
-// Retrieve file endpoint
+// Retrieve file endpoint using the 6-character code
 app.post('/retrieve', (req, res) => {
-  const code = req.body.code;
+  const code = req.body.code ? req.body.code.trim().toUpperCase() : '';
   const fileData = fileStore.get(code);
+  
   if (!fileData) {
-    return res.status(404).send('<h3>File not found or expired. <a href="/">Go Back</a></h3>');
+    return res.status(404).send('<h3>File not found or code has expired. <a href="/">Go Back</a></h3>');
   }
+
   res.setHeader('Content-Disposition', `attachment; filename="${fileData.filename}"`);
   res.send(fileData.buffer);
 });
@@ -107,4 +165,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is live and running on port ${PORT}`);
 });
-  
+                  
