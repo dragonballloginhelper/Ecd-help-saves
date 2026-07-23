@@ -12,7 +12,7 @@ const upload = multer({
 });
 
 const fileStore = new Map();
-const verificationCodes = new Map(); // stores email -> { code, expires }
+const verificationCodes = new Map(); 
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 
 app.use(express.urlencoded({ extended: true }));
@@ -23,7 +23,6 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-// Timeout middleware for guest penalty
 app.use((req, res, next) => {
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   if (!global.timeoutMap) global.timeoutMap = new Map();
@@ -50,16 +49,6 @@ app.use((req, res, next) => {
   next();
 });
 
-function generateCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-// Simulated Google Login Routes
 app.get('/auth/google', (req, res) => {
   req.session.user = {
     email: 'verified.user@gmail.com',
@@ -74,7 +63,6 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
-// Step 1: Send Verification Code to Email
 app.post('/send-code', (req, res) => {
   const email = req.body.email ? req.body.email.trim() : '';
   if (!email || !email.includes('@') || !email.endsWith('@gmail.com')) {
@@ -84,10 +72,9 @@ app.post('/send-code', (req, res) => {
   const vCode = Math.floor(100000 + Math.random() * 900000).toString();
   verificationCodes.set(email, {
     code: vCode,
-    expires: Date.now() + 5 * 60 * 1000 // Valid for 5 minutes
+    expires: Date.now() + 5 * 60 * 1000
   });
 
-  // Simulated email dispatch (Printed to server console as mock SMTP service)
   console.log(`\n========================================`);
   console.log(`[SIMULATED MAILER] To: ${email}`);
   console.log(`[SIMULATED MAILER] Your ECD Dump Verification Code is: ${vCode}`);
@@ -99,6 +86,17 @@ app.post('/send-code', (req, res) => {
 app.get('/', (req, res) => {
   const user = req.session.user || null;
   
+  const guestEmailSection = !user ? `
+    <div style="margin: 12px 0; text-align: left;">
+        <label style="font-size:12px; color:#94a3b8;">Guest Gmail Verification:</label>
+        <div style="display: flex; gap: 6px; margin-top: 5px;">
+            <input type="email" id="guestEmail" name="email" placeholder="name@gmail.com" style="margin:0; flex:1;" required>
+            <button type="button" onclick="sendVerificationCode()" style="width: auto; margin:0; padding: 0 12px; font-size: 12px;">Send Code</button>
+        </div>
+        <input type="text" name="emailCode" placeholder="Enter 6-digit Email Code" maxlength="6" style="margin-top:8px;" required>
+    </div>
+  ` : '';
+
   res.send(`
     <!DOCTYPE html>
     <html lang="en">
@@ -520,7 +518,6 @@ app.get('/', (req, res) => {
                         </select>
                     </div>
 
-                    <!-- Visibility Toggle -->
                     <div style="text-align: left; font-size: 12px; color: #94a3b8; margin-top: 12px;">File Visibility:</div>
                     ${user ? `
                         <div class="toggle-group">
@@ -535,24 +532,13 @@ app.get('/', (req, res) => {
                         <input type="hidden" name="visibility" id="visibilityInput" value="private">
                     `}
 
-                    <!-- Email Verification Requirement for Guests -->
-                    ${!user ? `
-                        <div style="margin: 12px 0; text-align: left;">
-                            <label style="font-size:12px; color:#94a3b8;">Guest Gmail Verification:</label>
-                            <div style="display: flex; gap: 6px; margin-top: 5px;">
-                                <input type="email" id="guestEmail" name="email" placeholder="name@gmail.com" style="margin:0; flex:1;" required>
-                                <button type="button" onclick="sendVerificationCode()" style="width: auto; margin:0; padding: 0 12px; font-size: 12px;">Send Code</button>
-                            </div>
-                            <input type="text" name="emailCode" placeholder="Enter 6-digit Email Code" maxlength="6" style="margin-top:8px;" required>
-                        </div>
-                    ` : ''}
+                    ${guestEmailSection}
 
                     <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
                         <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
                         <input type="file" id="fileInput" name="file" required onchange="updateFileName(this)">
                     </div>
 
-                    <!-- Terminal Captcha Checkpoint -->
                     <div class="captcha-box">
                         <label><input type="checkbox" name="captcha" required style="width:auto; margin-right:8px;"> Verify Human Checkpoint</label>
                         <span style="color:#38bdf8; font-size:11px;">Anti-Bot v2</span>
@@ -747,14 +733,12 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const user = req.session.user || null;
 
-    // Strict guest enforcement & Email code validation check
     if (!user) {
       const email = req.body.email ? req.body.email.trim() : '';
       const emailCode = req.body.emailCode ? req.body.emailCode.trim() : '';
       
       const record = verificationCodes.get(email);
       if (!record || record.code !== emailCode || Date.now() > record.expires) {
-        // Apply 10 minute timeout penalty to all tools for failed verification
         if (!global.timeoutMap) global.timeoutMap = new Map();
         global.timeoutMap.set(clientIp, Date.now() + 10 * 60 * 1000);
 
@@ -771,9 +755,8 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
           </html>
         `);
       }
-      verificationCodes.delete(email); // consume code
+      verificationCodes.delete(email);
 
-      // 24-hour limit check
       const now = Date.now();
       if (!global.guestLimits) global.guestLimits = new Map();
       if (global.guestLimits.has(clientIp)) {
@@ -819,10 +802,14 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       `);
     }
 
-    let code = generateCode();
-    while (fileStore.has(code)) {
-      code = generateCode();
-    }
+    let code = '';
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    do {
+      code = '';
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+    } while (fileStore.has(code));
 
     fileStore.set(code, {
       filename: file.originalname,
