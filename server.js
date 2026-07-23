@@ -49,23 +49,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Helper to look up a Discord User ID by their exact username via Bot Token
-async function getUserIdByUsername(username) {
-  try {
-    // Note: This requires the Server Members Intent or global user lookup if supported, 
-    // alternatively we can search via REST API if the bot shares a server, 
-    // or use Discord's application role connection / user lookup endpoints.
-    // Since direct global user search by tag is limited by Discord API constraints unless cached,
-    // let's use an alternative approach: asking users for their User ID OR handling username resolution.
-    // Wait, standard bot lookup works best with User ID. Let's accept Discord User ID or clean username lookup:
-    return null;
-  } catch (err) {
-    console.error('Error resolving username:', err);
-    return null;
-  }
-}
-
-// Helper to send DM directly using Discord User ID
+// Helper to send DM using Discord User ID
 async function sendDiscordDM(discordUserId, messageContent) {
   try {
     const channelRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
@@ -95,32 +79,41 @@ async function sendDiscordDM(discordUserId, messageContent) {
   }
 }
 
-// Endpoint to trigger DM code via Discord User ID
 app.post('/send-discord-code', async (req, res) => {
-  const { discordId } = req.body;
-  if (!discordId || !discordId.trim()) {
-    return res.status(400).json({ success: false, message: 'Please enter your Discord User ID.' });
+  let inputVal = req.body.discordId ? req.body.discordId.trim() : '';
+  if (!inputVal) {
+    return res.status(400).json({ success: false, message: 'Please enter your username or user ID.' });
   }
 
-  const cleanId = discordId.trim();
-  const vCode = Math.floor(100000 + Math.random() * 900000).toString();
+  if (inputVal.startsWith('@')) {
+    inputVal = inputVal.substring(1);
+  }
+
+  let resolvedId = inputVal;
   
-  verificationCodes.set(cleanId, {
+  if (isNaN(inputVal) || inputVal.length < 15) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Discord API restricts global text handle lookups. Please enter your 18-digit Discord User ID (Turn on Developer Mode -> Right click your profile -> Copy User ID).' 
+    });
+  }
+
+  const vCode = Math.floor(100000 + Math.random() * 900000).toString();
+  verificationCodes.set(resolvedId, {
     code: vCode,
     expires: Date.now() + 5 * 60 * 1000
   });
 
-  const dmSuccess = await sendDiscordDM(cleanId, '🔐 **ECD Dump Verification Code**\nYour code is: `' + vCode + '`\nThis code expires in 5 minutes.');
+  const dmSuccess = await sendDiscordDM(resolvedId, '🔐 **ECD Dump Verification Code**\nYour code is: `' + vCode + '`\nThis code expires in 5 minutes.');
 
   if (!dmSuccess) {
     return res.status(500).json({ 
       success: false, 
-      message: 'Failed to send DM. Make sure your DMs are open and your User ID is correct!' 
+      message: 'Failed to send DM. Make sure your DMs are open to everyone on the server!' 
     });
   }
 
-  // Save session state temporarily
-  req.session.pendingUser = cleanId;
+  req.session.pendingUser = resolvedId;
   res.json({ success: true, message: 'Verification code sent to your Discord DMs!' });
 });
 
@@ -135,26 +128,12 @@ app.get('/', (req, res) => {
   
   let authBannerHtml = verifiedUser ? 
     '<span>Verified Discord ID: <strong>' + verifiedUser + '</strong></span><a href="/auth/logout" class="logout-btn">Logout</a>' :
-    '<span>Discord ID Verification Mode</span>';
-
-  let pinSectionHtml = '<input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">';
+    '<span>Discord Verification Portal</span>';
 
   let visibilitySectionHtml = '<div class="toggle-group">' +
     '<div class="toggle-option" id="visPublic" onclick="setVisibility(\'public\')">Public Feed</div>' +
     '<div class="toggle-option active" id="visPrivate" onclick="setVisibility(\'private\')">Private</div>' +
     '</div><input type="hidden" name="visibility" id="visibilityInput" value="private">';
-
-  let verificationSectionHtml = verifiedUser ?
-    '<div style="background:#0f172a; border:1px solid #22c55e; padding:10px; border-radius:8px; font-size:12px; color:#22c55e; margin:10px 0; text-align:center;">' +
-    '✅ Verified as <strong>' + verifiedUser + '</strong></div>' +
-    '<input type="hidden" name="verifiedDiscordId" value="' + verifiedUser + '">' :
-    '<div style="margin: 12px 0; text-align: left;">' +
-    '<label style="font-size:12px; color:#38bdf8;">Step 1: Enter your Discord User ID & Get Code:</label>' +
-    '<input type="text" id="discordIdInput" placeholder="Enter Discord User ID (e.g. 129384756...)" style="margin-top:5px; margin-bottom:8px;">' +
-    '<button type="button" onclick="sendDiscordVerificationCode()" style="margin:0; font-size: 12px; background:#5865F2;">Send Code to Discord DM</button>' +
-    '<label style="font-size:12px; color:#38bdf8; display:block; margin-top:10px;">Step 2: Enter 6-digit Code from DMs:</label>' +
-    '<input type="text" name="discordCode" placeholder="Enter 6-digit Code" maxlength="6" style="margin-top:5px;" required>' +
-    '</div>';
 
   res.send(`
     <!DOCTYPE html>
@@ -190,10 +169,10 @@ app.get('/', (req, res) => {
             .container { 
                 background: rgba(30, 41, 59, 0.85); 
                 backdrop-filter: blur(12px);
-                padding: 35px; 
+                padding: 30px; 
                 border-radius: 16px; 
                 box-shadow: 0 10px 30px rgba(0,0,0,0.6); 
-                width: 440px; 
+                width: 460px; 
                 text-align: center; 
                 animation: fadeIn 0.6s ease-out, pulseGlow 4s infinite ease-in-out;
                 border: 1px solid rgba(255, 255, 255, 0.08);
@@ -250,16 +229,67 @@ app.get('/', (req, res) => {
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
             }
+            
+            /* Navigation Tabs Styling */
+            .nav-tabs {
+                display: flex;
+                gap: 5px;
+                background: #0f172a;
+                padding: 5px;
+                border-radius: 10px;
+                margin-bottom: 20px;
+                border: 1px solid #334155;
+            }
+            .nav-tab {
+                flex: 1;
+                background: transparent;
+                border: none;
+                color: #94a3b8;
+                padding: 8px 4px;
+                font-size: 11px;
+                font-weight: 600;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: none;
+                margin: 0;
+                text-align: center;
+            }
+            .nav-tab:hover {
+                color: #f8fafc;
+                background: rgba(56, 189, 248, 0.1);
+                transform: none;
+                box-shadow: none;
+            }
+            .nav-tab.active {
+                background: #38bdf8;
+                color: #0f172a;
+                box-shadow: 0 2px 8px rgba(56, 189, 248, 0.4);
+            }
+
+            /* Tab Content Panel Sections */
+            .tab-panel {
+                display: none;
+                animation: fadeIn 0.4s ease-out;
+                text-align: left;
+            }
+            .tab-panel.active {
+                display: block;
+            }
+
             h3 {
                 font-size: 15px;
-                color: #94a3b8;
-                margin-bottom: 10px;
+                color: #38bdf8;
+                margin-top: 0;
+                margin-bottom: 12px;
                 letter-spacing: 0.5px;
+                border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+                padding-bottom: 6px;
             }
             input, select, button { 
                 width: 100%; 
                 padding: 12px; 
-                margin: 10px 0; 
+                margin: 8px 0; 
                 border-radius: 8px; 
                 border: none; 
                 box-sizing: border-box; 
@@ -343,14 +373,14 @@ app.get('/', (req, res) => {
                 background: #0f172a;
                 border: 1px solid #334155;
                 border-radius: 8px;
-                padding: 10px;
+                padding: 12px;
                 margin: 10px 0;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
                 font-size: 13px;
             }
-            button { 
+            button.action-btn { 
                 background: linear-gradient(135deg, #0284c7, #2563eb); 
                 color: white; 
                 font-weight: bold; 
@@ -360,16 +390,12 @@ app.get('/', (req, res) => {
                 justify-content: center;
                 align-items: center;
                 gap: 8px;
+                margin-top: 15px;
             }
-            button:hover { 
+            button.action-btn:hover { 
                 background: linear-gradient(135deg, #0369a1, #1d4ed8);
                 transform: translateY(-2px);
                 box-shadow: 0 6px 15px rgba(2, 132, 199, 0.5);
-            }
-            .section { 
-                margin-bottom: 20px; 
-                border-bottom: 1px solid rgba(51, 65, 85, 0.6); 
-                padding-bottom: 15px; 
             }
             .spinner {
                 display: none;
@@ -464,15 +490,74 @@ app.get('/', (req, res) => {
             <div class="auth-banner">
                 ${authBannerHtml}
             </div>
-            
-            <div class="section">
-                <h3>Dump ECD</h3>
-                <form id="uploadForm" action="/upload-discord" method="POST" enctype="multipart/form-data">
-                    <input type="text" name="username" placeholder="dbl user" required>
-                    
-                    ${pinSectionHtml}
 
-                    <div class="select-wrapper" style="margin-top: 10px;">
+            <!-- Separate Interactive Navigation Tabs -->
+            <div class="nav-tabs">
+                <button type="button" class="nav-tab active" onclick="switchTab('verificationTab', this)">Verification</button>
+                <button type="button" class="nav-tab" onclick="switchTab('captchaTab', this)">Captcha</button>
+                <button type="button" class="nav-tab" onclick="switchTab('privacyTab', this)">Privacy</button>
+                <button type="button" class="nav-tab" onclick="switchTab('uploadTab', this)">Upload & Code</button>
+                <button type="button" class="nav-tab" onclick="switchTab('downloadTab', this)">Download</button>
+            </div>
+
+            <form id="uploadForm" action="/upload-discord" method="POST" enctype="multipart/form-data">
+                
+                <!-- TAB 1: Verification / Login Tab -->
+                <div id="verificationTab" class="tab-panel active">
+                    <h3>Discord 2FA Verification</h3>
+                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Authenticate via Discord DMs to proceed with your dump payload.</p>
+                    
+                    ${verifiedUser ? 
+                        `<div style="background:#0f172a; border:1px solid #22c55e; padding:12px; border-radius:8px; font-size:12px; color:#22c55e; margin:10px 0; text-align:center;">
+                        ✅ Verified as <strong>${verifiedUser}</strong></div>
+                        <input type="hidden" name="discordId" value="${verifiedUser}">` :
+                        `<div style="margin: 8px 0;">
+                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Discord User ID:</label>
+                            <input type="text" id="discordIdInput" placeholder="Enter 18-digit Discord ID">
+                            <button type="button" onclick="sendDiscordVerificationCode()" style="margin:6px 0; font-size: 12px; background:#5865F2; padding:10px;">Send Code to Discord DM</button>
+                            <input type="text" name="discordCode" placeholder="Enter 6-digit Code from DMs" maxlength="6" style="margin-top:6px;">
+                        </div>`
+                    }
+                </div>
+
+                <!-- TAB 2: Captcha Tab -->
+                <div id="captchaTab" class="tab-panel">
+                    <h3>Human Verification Checkpoint</h3>
+                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Confirm your request is being handled by a human operator.</p>
+                    
+                    <div class="captcha-box" style="margin-top: 15px;">
+                        <label style="display:flex; align-items:center; cursor:pointer;">
+                            <input type="checkbox" name="captcha" required style="width:auto; margin-right:10px; accent-color:#38bdf8;"> 
+                            <span>Verify Human Checkpoint</span>
+                        </label>
+                        <span style="color:#38bdf8; font-size:11px; font-weight:600;">Anti-Bot v2</span>
+                    </div>
+                </div>
+
+                <!-- TAB 3: Privacy Settings Tab -->
+                <div id="privacyTab" class="tab-panel">
+                    <h3>Privacy & Security Settings</h3>
+                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Configure security locks and feed visibility parameters.</p>
+                    
+                    <div style="margin-top: 10px;">
+                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Optional Protection PIN:</label>
+                        <input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8" style="margin-top:0;">
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:6px;">File Feed Visibility:</label>
+                        ${visibilitySectionHtml}
+                    </div>
+                </div>
+
+                <!-- TAB 4: Upload and Code Tab -->
+                <div id="uploadTab" class="tab-panel">
+                    <h3>Payload & Processing Options</h3>
+                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Select your dbl username, AI engine preference, and upload file.</p>
+                    
+                    <input type="text" name="username" placeholder="dbl user" required style="margin-top:0;">
+                    
+                    <div class="select-wrapper" style="margin-top: 8px;">
                         <select name="aiMode" id="aiModeSelect">
                             <option value="standard" selected>AI Mode: Standard Clean</option>
                             <option value="aggressive">AI Mode: Aggressive Bypass</option>
@@ -480,36 +565,31 @@ app.get('/', (req, res) => {
                         </select>
                     </div>
 
-                    <div style="text-align: left; font-size: 12px; color: #94a3b8; margin-top: 12px;">File Visibility:</div>
-                    ${visibilitySectionHtml}
-
-                    ${verificationSectionHtml}
-
-                    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" style="margin-top:10px;">
                         <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
-                        <input type="file" id="fileInput" name="file" required onchange="updateFileName(this)">
+                        <input type="file" id="fileInput" name="file" onchange="updateFileName(this)">
                     </div>
 
-                    <div class="captcha-box">
-                        <label><input type="checkbox" name="captcha" required style="width:auto; margin-right:8px;"> Verify Human Checkpoint</label>
-                        <span style="color:#38bdf8; font-size:11px;">Anti-Bot v2</span>
-                    </div>
-
-                    <button type="submit" id="uploadBtn">
+                    <button type="submit" id="uploadBtn" class="action-btn">
                         <span id="btnText">Upload & Get Code</span>
                         <div class="spinner" id="btnSpinner"></div>
                     </button>
+                </div>
+
+            </form>
+
+            <!-- TAB 5: Download Tab (Standalone retrieval form) -->
+            <div id="downloadTab" class="tab-panel">
+                <h3>Retrieve & Download File</h3>
+                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Input your retrieval token and PIN code to fetch your stored file.</p>
+                
+                <form action="/retrieve" method="POST">
+                    <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required style="margin-top:0;">
+                    <input type="text" name="pin" placeholder="ENTER PIN (IF SET)" maxlength="8">
+                    <button type="submit" class="action-btn" style="background: linear-gradient(135deg, #059669, #0d9488);">Download File</button>
                 </form>
             </div>
 
-            <div class="section">
-                <h3>Retrieve File</h3>
-                <form action="/retrieve" method="POST">
-                    <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required>
-                    <input type="text" name="pin" placeholder="ENTER PIN (IF SET)" maxlength="8">
-                    <button type="submit">Download File</button>
-                </form>
-            </div>
         </div>
 
         <div class="modal-overlay" id="infoModal" onclick="outsideClick(event)">
@@ -524,10 +604,21 @@ app.get('/', (req, res) => {
         </div>
 
         <script>
+            function switchTab(tabId, btnElement) {
+                const panels = document.querySelectorAll('.tab-panel');
+                panels.forEach(panel => panel.classList.remove('active'));
+
+                const tabs = document.querySelectorAll('.nav-tab');
+                tabs.forEach(tab => tab.classList.remove('active'));
+
+                document.getElementById(tabId).classList.add('active');
+                btnElement.classList.add('active');
+            }
+
             async function sendDiscordVerificationCode() {
                 const discordId = document.getElementById('discordIdInput').value;
                 if(!discordId) {
-                    alert('Please enter your Discord User ID first!');
+                    alert('Please enter your Discord User ID!');
                     return;
                 }
                 try {
@@ -579,28 +670,30 @@ app.get('/', (req, res) => {
             const dropZone = document.getElementById('dropZone');
             const fileInput = document.getElementById('fileInput');
 
-            ['dragenter', 'dragover'].forEach(eventName => {
-                dropZone.addEventListener(eventName, (e) => {
-                    e.preventDefault();
-                    dropZone.classList.add('dragover');
-                }, false);
-            });
+            if(dropZone && fileInput) {
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, (e) => {
+                        e.preventDefault();
+                        dropZone.classList.add('dragover');
+                    }, false);
+                });
 
-            ['dragleave', 'drop'].forEach(eventName => {
-                dropZone.addEventListener(eventName, (e) => {
-                    e.preventDefault();
-                    dropZone.classList.remove('dragover');
-                }, false);
-            });
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, (e) => {
+                        e.preventDefault();
+                        dropZone.classList.remove('dragover');
+                    }, false);
+                });
 
-            dropZone.addEventListener('drop', (e) => {
-                const dt = e.dataTransfer;
-                const files = dt.files;
-                if (files.length > 0) {
-                    fileInput.files = files;
-                    updateFileName(fileInput);
-                }
-            });
+                dropZone.addEventListener('drop', (e) => {
+                    const dt = e.dataTransfer;
+                    const files = dt.files;
+                    if (files.length > 0) {
+                        fileInput.files = files;
+                        updateFileName(fileInput);
+                    }
+                });
+            }
         </script>
     </body>
     </html>
