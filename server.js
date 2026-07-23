@@ -3,6 +3,8 @@ const multer = require('multer');
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 const session = require('express-session');
+const https = require('https');
+const fs = require('fs');
 
 const app = express();
 
@@ -12,11 +14,12 @@ const upload = multer({
 });
 
 const fileStore = new Map();
-const verificationCodes = new Map(); 
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 
-// Discord Bot Token with hardcoded fallback
-const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || 'MTUyOTg3MDI2OTcyNzExNzQwMw.Gi5ozp.LrUwnKGhrfcKl7OGeVSYMYenHXFgYkj-uII5Ak';
+// Replace these placeholders with your actual Discord Application credentials
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID || 'YOUR_CLIENT_ID';
+const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || 'YOUR_CLIENT_SECRET';
+const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://localhost:3000/auth/discord/callback';
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -26,95 +29,50 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-app.use((req, res, next) => {
-  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  if (!global.timeoutMap) global.timeoutMap = new Map();
-  
-  if (global.timeoutMap.has(clientIp)) {
-    const unblockTime = global.timeoutMap.get(clientIp);
-    if (Date.now() < unblockTime) {
-      const remainingSecs = Math.ceil((unblockTime - Date.now()) / 1000);
-      return res.status(429).send(
-        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Timeout Active</title></head>' +
-        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:80px;">' +
-        '<h2 style="color:#ef4444;">Access Blocked</h2>' +
-        '<p>Verification failed. You are timed out from all tools for verification failure.</p>' +
-        '<p style="color:#38bdf8; font-size:18px;">Time remaining: <strong>' + remainingSecs + ' seconds</strong></p>' +
-        '</body></html>'
-      );
-    } else {
-      global.timeoutMap.delete(clientIp);
-    }
-  }
-  next();
+app.get('/auth/discord', (req, res) => {
+  const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=identify`;
+  res.redirect(discordAuthUrl);
 });
 
-// Helper to send DM using Discord User ID
-async function sendDiscordDM(discordUserId, messageContent) {
+app.get('/auth/discord/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) {
+    return res.redirect('/?error=NoCodeProvided');
+  }
+
   try {
-    const channelRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
+    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bot ' + DISCORD_BOT_TOKEN,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ recipient_id: discordUserId })
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: REDIRECT_URI,
+      })
     });
-    const channelData = await channelRes.json();
-    if (!channelData.id) return false;
 
-    const msgRes = await fetch('https://discord.com/api/v10/channels/' + channelData.id + '/messages', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bot ' + DISCORD_BOT_TOKEN,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ content: messageContent })
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) {
+      return res.redirect('/?error=TokenExchangeFailed');
+    }
+
+    const userRes = await fetch('https://discord.com/api/users/@me', {
+      headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
     });
-    
-    return msgRes.ok;
+
+    const userData = await userRes.json();
+    if (!userData.id) {
+      return res.redirect('/?error=FetchUserFailed');
+    }
+
+    req.session.verifiedUser = `${userData.username} (${userData.id})`;
+    res.redirect('/');
   } catch (err) {
-    console.error('Failed to send Discord DM:', err);
-    return false;
+    console.error('OAuth Error:', err);
+    res.redirect('/?error=ServerError');
   }
-}
-
-app.post('/send-discord-code', async (req, res) => {
-  let inputVal = req.body.discordId ? req.body.discordId.trim() : '';
-  if (!inputVal) {
-    return res.status(400).json({ success: false, message: 'Please enter your username or user ID.' });
-  }
-
-  if (inputVal.startsWith('@')) {
-    inputVal = inputVal.substring(1);
-  }
-
-  let resolvedId = inputVal;
-  
-  if (isNaN(inputVal) || inputVal.length < 15) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Discord API restricts global text handle lookups. Please enter your 18-digit Discord User ID (Turn on Developer Mode -> Right click your profile -> Copy User ID).' 
-    });
-  }
-
-  const vCode = Math.floor(100000 + Math.random() * 900000).toString();
-  verificationCodes.set(resolvedId, {
-    code: vCode,
-    expires: Date.now() + 5 * 60 * 1000
-  });
-
-  const dmSuccess = await sendDiscordDM(resolvedId, '🔐 **ECD Dump Verification Code**\nYour code is: `' + vCode + '`\nThis code expires in 5 minutes.');
-
-  if (!dmSuccess) {
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to send DM. Make sure your DMs are open to everyone on the server!' 
-    });
-  }
-
-  req.session.pendingUser = resolvedId;
-  res.json({ success: true, message: 'Verification code sent to your Discord DMs!' });
 });
 
 app.get('/auth/logout', (req, res) => {
@@ -125,15 +83,6 @@ app.get('/auth/logout', (req, res) => {
 
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
-  
-  let authBannerHtml = verifiedUser ? 
-    '<span>Verified Discord ID: <strong>' + verifiedUser + '</strong></span><a href="/auth/logout" class="logout-btn">Logout</a>' :
-    '<span>Discord Verification Portal</span>';
-
-  let visibilitySectionHtml = '<div class="toggle-group">' +
-    '<div class="toggle-option" id="visPublic" onclick="setVisibility(\'public\')">Public Feed</div>' +
-    '<div class="toggle-option active" id="visPrivate" onclick="setVisibility(\'private\')">Private</div>' +
-    '</div><input type="hidden" name="visibility" id="visibilityInput" value="private">';
 
   res.send(`
     <!DOCTYPE html>
@@ -151,10 +100,6 @@ app.get('/', (req, res) => {
                 0% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
                 50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.5); }
                 100% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
-            }
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
             }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -202,22 +147,6 @@ app.get('/', (req, res) => {
                 color: #0f172a;
                 transform: scale(1.1);
             }
-            .auth-banner {
-                background: #0f172a;
-                border: 1px solid #334155;
-                padding: 10px;
-                border-radius: 8px;
-                margin-bottom: 20px;
-                font-size: 13px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .logout-btn {
-                color: #ef4444;
-                text-decoration: none;
-                font-size: 12px;
-            }
             h2 { 
                 margin-top: 5px;
                 margin-bottom: 20px; 
@@ -230,12 +159,11 @@ app.get('/', (req, res) => {
                 -webkit-text-fill-color: transparent;
             }
             
-            /* Navigation Tabs Styling */
             .nav-tabs {
                 display: flex;
-                gap: 5px;
+                gap: 10px;
                 background: #0f172a;
-                padding: 5px;
+                padding: 6px;
                 border-radius: 10px;
                 margin-bottom: 20px;
                 border: 1px solid #334155;
@@ -245,9 +173,9 @@ app.get('/', (req, res) => {
                 background: transparent;
                 border: none;
                 color: #94a3b8;
-                padding: 8px 4px;
-                font-size: 11px;
-                font-weight: 600;
+                padding: 10px;
+                font-size: 13px;
+                font-weight: 700;
                 border-radius: 6px;
                 cursor: pointer;
                 transition: all 0.3s ease;
@@ -258,8 +186,6 @@ app.get('/', (req, res) => {
             .nav-tab:hover {
                 color: #f8fafc;
                 background: rgba(56, 189, 248, 0.1);
-                transform: none;
-                box-shadow: none;
             }
             .nav-tab.active {
                 background: #38bdf8;
@@ -267,7 +193,6 @@ app.get('/', (req, res) => {
                 box-shadow: 0 2px 8px rgba(56, 189, 248, 0.4);
             }
 
-            /* Tab Content Panel Sections */
             .tab-panel {
                 display: none;
                 animation: fadeIn 0.4s ease-out;
@@ -311,7 +236,6 @@ app.get('/', (req, res) => {
             select:focus {
                 border-color: #38bdf8;
                 outline: none;
-                box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
             }
             .toggle-group {
                 display: flex;
@@ -357,17 +281,16 @@ app.get('/', (req, res) => {
                 color: #94a3b8;
                 pointer-events: none;
             }
-            input[type="text"], input[type="email"] {
+            input[type="text"] {
                 background: #0f172a;
                 color: #f8fafc;
                 border: 1px solid #334155;
                 text-align: center;
                 letter-spacing: 1px;
             }
-            input[type="text"]:focus, input[type="email"]:focus {
+            input[type="text"]:focus {
                 border-color: #38bdf8;
                 outline: none;
-                box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
             }
             .captcha-box {
                 background: #0f172a;
@@ -395,16 +318,29 @@ app.get('/', (req, res) => {
             button.action-btn:hover { 
                 background: linear-gradient(135deg, #0369a1, #1d4ed8);
                 transform: translateY(-2px);
-                box-shadow: 0 6px 15px rgba(2, 132, 199, 0.5);
             }
-            .spinner {
-                display: none;
-                width: 16px;
-                height: 16px;
-                border: 2px solid rgba(255,255,255,0.3);
-                border-radius: 50%;
-                border-top-color: #fff;
-                animation: spin 0.8s linear infinite;
+            .discord-login-btn {
+                background: #5865F2;
+                color: white;
+                font-weight: bold;
+                text-decoration: none;
+                display: block;
+                padding: 12px;
+                border-radius: 8px;
+                text-align: center;
+                margin: 15px 0;
+                transition: background 0.3s;
+            }
+            .discord-login-btn:hover {
+                background: #4752C4;
+            }
+            .locked-overlay {
+                background: rgba(15, 23, 42, 0.9);
+                border: 1px dashed #ef4444;
+                padding: 25px;
+                border-radius: 10px;
+                text-align: center;
+                color: #f8fafc;
             }
             .modal-overlay {
                 position: fixed;
@@ -433,27 +369,7 @@ app.get('/', (req, res) => {
                 width: 330px;
                 text-align: left;
                 border: 1px solid rgba(56, 189, 248, 0.2);
-                box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-                transform: scale(0.9);
-                transition: transform 0.3s ease;
                 position: relative;
-            }
-            .modal-overlay.active .modal-content {
-                transform: scale(1);
-            }
-            .modal-content h3 {
-                color: #38bdf8;
-                margin-top: 0;
-                font-size: 18px;
-                text-align: center;
-                border-bottom: 1px solid #334155;
-                padding-bottom: 10px;
-            }
-            .modal-content p {
-                font-size: 13px;
-                line-height: 1.5;
-                color: #cbd5e1;
-                margin: 10px 0;
             }
             .close-btn {
                 position: absolute;
@@ -464,14 +380,6 @@ app.get('/', (req, res) => {
                 color: #94a3b8;
                 font-size: 18px;
                 cursor: pointer;
-                width: auto;
-                padding: 0;
-                margin: 0;
-            }
-            .close-btn:hover {
-                color: #f8fafc;
-                transform: none;
-                box-shadow: none;
             }
             .footer-credit {
                 margin-top: 12px;
@@ -487,107 +395,83 @@ app.get('/', (req, res) => {
             <div class="info-icon" onclick="toggleModal()">i</div>
             <h2>ECD Dump</h2>
 
-            <div class="auth-banner">
-                ${authBannerHtml}
-            </div>
-
-            <!-- Separate Interactive Navigation Tabs -->
             <div class="nav-tabs">
-                <button type="button" class="nav-tab active" onclick="switchTab('verificationTab', this)">Verification</button>
-                <button type="button" class="nav-tab" onclick="switchTab('captchaTab', this)">Captcha</button>
-                <button type="button" class="nav-tab" onclick="switchTab('privacyTab', this)">Privacy</button>
-                <button type="button" class="nav-tab" onclick="switchTab('uploadTab', this)">Upload & Code</button>
-                <button type="button" class="nav-tab" onclick="switchTab('downloadTab', this)">Download</button>
+                <button type="button" class="nav-tab active" onclick="switchTab('loginTab', this)">[ Login content ]</button>
+                <button type="button" class="nav-tab" onclick="switchTab('mainTab', this)">[ Main content ]</button>
             </div>
 
-            <form id="uploadForm" action="/upload-discord" method="POST" enctype="multipart/form-data">
+            <!-- TAB 1: LOGIN CONTENT -->
+            <div id="loginTab" class="tab-panel active">
+                <h3>Discord Authentication</h3>
+                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Sign in securely with your Discord account to unlock main features.</p>
                 
-                <!-- TAB 1: Verification / Login Tab -->
-                <div id="verificationTab" class="tab-panel active">
-                    <h3>Discord 2FA Verification</h3>
-                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Authenticate via Discord DMs to proceed with your dump payload.</p>
-                    
-                    ${verifiedUser ? 
-                        `<div style="background:#0f172a; border:1px solid #22c55e; padding:12px; border-radius:8px; font-size:12px; color:#22c55e; margin:10px 0; text-align:center;">
-                        ✅ Verified as <strong>${verifiedUser}</strong></div>
-                        <input type="hidden" name="discordId" value="${verifiedUser}">` :
-                        `<div style="margin: 8px 0;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Discord User ID:</label>
-                            <input type="text" id="discordIdInput" placeholder="Enter 18-digit Discord ID">
-                            <button type="button" onclick="sendDiscordVerificationCode()" style="margin:6px 0; font-size: 12px; background:#5865F2; padding:10px;">Send Code to Discord DM</button>
-                            <input type="text" name="discordCode" placeholder="Enter 6-digit Code from DMs" maxlength="6" style="margin-top:6px;">
-                        </div>`
-                    }
-                </div>
-
-                <!-- TAB 2: Captcha Tab -->
-                <div id="captchaTab" class="tab-panel">
-                    <h3>Human Verification Checkpoint</h3>
-                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Confirm your request is being handled by a human operator.</p>
-                    
-                    <div class="captcha-box" style="margin-top: 15px;">
-                        <label style="display:flex; align-items:center; cursor:pointer;">
-                            <input type="checkbox" name="captcha" required style="width:auto; margin-right:10px; accent-color:#38bdf8;"> 
-                            <span>Verify Human Checkpoint</span>
-                        </label>
-                        <span style="color:#38bdf8; font-size:11px; font-weight:600;">Anti-Bot v2</span>
+                ${verifiedUser ? 
+                    `<div style="background:#0f172a; border:1px solid #22c55e; padding:15px; border-radius:8px; font-size:13px; color:#22c55e; margin:10px 0; text-align:center;">
+                        ✅ Logged in as<br><strong>${verifiedUser}</strong>
                     </div>
-                </div>
+                    <a href="/auth/logout" style="display:block; text-align:center; color:#ef4444; text-decoration:none; font-size:12px; margin-top:10px;">Logout / Switch Account</a>` :
+                    `<a href="/auth/discord" class="discord-login-btn">Login with Discord</a>`
+                }
+            </div>
 
-                <!-- TAB 3: Privacy Settings Tab -->
-                <div id="privacyTab" class="tab-panel">
-                    <h3>Privacy & Security Settings</h3>
-                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Configure security locks and feed visibility parameters.</p>
-                    
-                    <div style="margin-top: 10px;">
-                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Optional Protection PIN:</label>
-                        <input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8" style="margin-top:0;">
-                    </div>
+            <!-- TAB 2: MAIN CONTENT -->
+            <div id="mainTab" class="tab-panel">
+                ${verifiedUser ? 
+                    `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
+                        <h3>Upload Payload</h3>
+                        <input type="text" name="username" placeholder="dbl user" required style="margin-top:0;">
+                        
+                        <div style="margin-top: 10px;">
+                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Protection PIN:</label>
+                            <input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8" style="margin-top:0;">
+                        </div>
 
-                    <div style="margin-top: 15px;">
-                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:6px;">File Feed Visibility:</label>
-                        ${visibilitySectionHtml}
-                    </div>
-                </div>
+                        <div class="select-wrapper" style="margin-top: 8px;">
+                            <select name="aiMode" id="aiModeSelect">
+                                <option value="standard" selected>AI Mode: Standard Clean</option>
+                                <option value="aggressive">AI Mode: Aggressive Bypass</option>
+                                <option value="stealth">AI Mode: Ghost Stealth</option>
+                            </select>
+                        </div>
 
-                <!-- TAB 4: Upload and Code Tab -->
-                <div id="uploadTab" class="tab-panel">
-                    <h3>Payload & Processing Options</h3>
-                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Select your dbl username, AI engine preference, and upload file.</p>
-                    
-                    <input type="text" name="username" placeholder="dbl user" required style="margin-top:0;">
-                    
-                    <div class="select-wrapper" style="margin-top: 8px;">
-                        <select name="aiMode" id="aiModeSelect">
-                            <option value="standard" selected>AI Mode: Standard Clean</option>
-                            <option value="aggressive">AI Mode: Aggressive Bypass</option>
-                            <option value="stealth">AI Mode: Ghost Stealth</option>
-                        </select>
-                    </div>
+                        <div style="margin-top: 10px;">
+                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:6px;">File Feed Visibility:</label>
+                            <div class="toggle-group">
+                                <div class="toggle-option" id="visPublic" onclick="setVisibility('public')">Public Feed</div>
+                                <div class="toggle-option active" id="visPrivate" onclick="setVisibility('private')">Private</div>
+                            </div>
+                            <input type="hidden" name="visibility" id="visibilityInput" value="private">
+                        </div>
 
-                    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" style="margin-top:10px;">
-                        <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
-                        <input type="file" id="fileInput" name="file" onchange="updateFileName(this)">
-                    </div>
+                        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" style="margin-top:10px;">
+                            <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
+                            <input type="file" id="fileInput" name="file" required onchange="updateFileName(this)">
+                        </div>
 
-                    <button type="submit" id="uploadBtn" class="action-btn">
-                        <span id="btnText">Upload & Get Code</span>
-                        <div class="spinner" id="btnSpinner"></div>
-                    </button>
-                </div>
+                        <div class="captcha-box">
+                            <label style="display:flex; align-items:center; cursor:pointer;">
+                                <input type="checkbox" name="captcha" required style="width:auto; margin-right:10px; accent-color:#38bdf8;"> 
+                                <span>Verify Human Checkpoint</span>
+                            </label>
+                            <span style="color:#38bdf8; font-size:11px;">Anti-Bot v2</span>
+                        </div>
 
-            </form>
+                        <button type="submit" class="action-btn">Upload & Get Code</button>
+                    </form>
 
-            <!-- TAB 5: Download Tab (Standalone retrieval form) -->
-            <div id="downloadTab" class="tab-panel">
-                <h3>Retrieve & Download File</h3>
-                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Input your retrieval token and PIN code to fetch your stored file.</p>
-                
-                <form action="/retrieve" method="POST">
-                    <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required style="margin-top:0;">
-                    <input type="text" name="pin" placeholder="ENTER PIN (IF SET)" maxlength="8">
-                    <button type="submit" class="action-btn" style="background: linear-gradient(135deg, #059669, #0d9488);">Download File</button>
-                </form>
+                    <hr style="border:0; border-top:1px solid #334155; margin:20px 0;">
+
+                    <h3>Retrieve File</h3>
+                    <form action="/retrieve" method="POST">
+                        <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required style="margin-top:0;">
+                        <input type="text" name="pin" placeholder="ENTER PIN (IF SET)" maxlength="8">
+                        <button type="submit" class="action-btn" style="background: linear-gradient(135deg, #059669, #0d9488);">Download File</button>
+                    </form>` :
+                    `<div class="locked-overlay">
+                        <h3 style="color:#ef4444; border:none; margin-bottom:10px;">🔒 Content Locked</h3>
+                        <p style="font-size:13px; color:#94a3b8; margin:0;">You must log in under the <strong>[ Login content ]</strong> tab before accessing tool functions.</p>
+                    </div>`
+                }
             </div>
 
         </div>
@@ -596,7 +480,7 @@ app.get('/', (req, res) => {
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
                 <h3>About ECD Dump</h3>
-                <p><strong>Welcome to ecd dump.</strong><br>Secure platform to strip telemetry signatures and prevent bans.</p>
+                <p style="font-size:13px; color:#cbd5e1;">Secure platform to strip telemetry signatures and prevent bans.</p>
                 <div class="footer-credit">
                     Created by: @levi__fxz on telegram, instagram and eren__lx on X
                 </div>
@@ -605,37 +489,10 @@ app.get('/', (req, res) => {
 
         <script>
             function switchTab(tabId, btnElement) {
-                const panels = document.querySelectorAll('.tab-panel');
-                panels.forEach(panel => panel.classList.remove('active'));
-
-                const tabs = document.querySelectorAll('.nav-tab');
-                tabs.forEach(tab => tab.classList.remove('active'));
-
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
                 document.getElementById(tabId).classList.add('active');
                 btnElement.classList.add('active');
-            }
-
-            async function sendDiscordVerificationCode() {
-                const discordId = document.getElementById('discordIdInput').value;
-                if(!discordId) {
-                    alert('Please enter your Discord User ID!');
-                    return;
-                }
-                try {
-                    const res = await fetch('/send-discord-code', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ discordId: discordId })
-                    });
-                    const data = await res.json();
-                    if(data.success) {
-                        alert('Verification code sent directly to your Discord DMs!');
-                    } else {
-                        alert(data.message || 'Failed to send verification code.');
-                    }
-                } catch(err) {
-                    alert('Network error sending verification code.');
-                }
             }
 
             function setVisibility(mode) {
@@ -650,13 +507,11 @@ app.get('/', (req, res) => {
             }
 
             function toggleModal() {
-                const modal = document.getElementById('infoModal');
-                modal.classList.toggle('active');
+                document.getElementById('infoModal').classList.toggle('active');
             }
             function outsideClick(event) {
-                const modal = document.getElementById('infoModal');
-                if (event.target === modal) {
-                    modal.classList.remove('active');
+                if (event.target === document.getElementById('infoModal')) {
+                    document.getElementById('infoModal').classList.remove('active');
                 }
             }
             function updateFileName(input) {
@@ -666,34 +521,6 @@ app.get('/', (req, res) => {
                     dropText.style.color = "#38bdf8";
                 }
             }
-
-            const dropZone = document.getElementById('dropZone');
-            const fileInput = document.getElementById('fileInput');
-
-            if(dropZone && fileInput) {
-                ['dragenter', 'dragover'].forEach(eventName => {
-                    dropZone.addEventListener(eventName, (e) => {
-                        e.preventDefault();
-                        dropZone.classList.add('dragover');
-                    }, false);
-                });
-
-                ['dragleave', 'drop'].forEach(eventName => {
-                    dropZone.addEventListener(eventName, (e) => {
-                        e.preventDefault();
-                        dropZone.classList.remove('dragover');
-                    }, false);
-                });
-
-                dropZone.addEventListener('drop', (e) => {
-                    const dt = e.dataTransfer;
-                    const files = dt.files;
-                    if (files.length > 0) {
-                        fileInput.files = files;
-                        updateFileName(fileInput);
-                    }
-                });
-            }
         </script>
     </body>
     </html>
@@ -702,26 +529,9 @@ app.get('/', (req, res) => {
 
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const discordId = req.body.discordId ? req.body.discordId.trim() : (req.session.pendingUser || '');
-    const discordCode = req.body.discordCode ? req.body.discordCode.trim() : '';
-    
-    const record = verificationCodes.get(discordId);
-
-    if (!discordId || !record || record.code !== discordCode || Date.now() > record.expires) {
-      if (!global.timeoutMap) global.timeoutMap = new Map();
-      global.timeoutMap.set(clientIp, Date.now() + 10 * 60 * 1000);
-
-      return res.status(403).send(
-        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Verification Failed</title></head>' +
-        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
-        '<h2 style="color:#ef4444;">Verification Failed</h2>' +
-        '<p>Incorrect or expired Discord DM verification code provided.</p>' +
-        '<p style="color:#f59e0b;">You have been placed on a <strong>10-minute timeout</strong>.</p>' +
-        '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
-      );
+    if (!req.session.verifiedUser) {
+      return res.status(403).send('<h3>Unauthorized. Please log in first. <a href="/">Go Back</a></h3>');
     }
-    verificationCodes.delete(discordId);
 
     const file = req.file;
     const username = req.body.username ? req.body.username.trim() : 'Unknown';
@@ -735,12 +545,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const filenameRegex = /^ecd\d+/i;
     if (!filenameRegex.test(file.originalname)) {
-      return res.status(400).send(
-        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Failed</title></head>' +
-        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
-        '<h2>Invalid ECD Format</h2>' +
-        '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
-      );
+      return res.status(400).send('<h3>Invalid ECD format. <a href="/">Go Back</a></h3>');
     }
 
     let code = '';
@@ -760,7 +565,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       timestamp: Date.now()
     });
 
-    const identityTag = 'Verified Discord ID: `' + discordId + '`';
+    const identityTag = 'Verified Discord User: `' + req.session.verifiedUser + '`';
     let webhookContent = '📦 **New File Uploaded**\n👤 User: `' + username + '`\n🔐 Identity: ' + identityTag + '\n👁️ Visibility: `' + visibility + '`\n⚙️ Mode: `' + aiMode + '`\nFilename: `' + file.originalname + '`\nCode: `' + code + '`';
 
     const formData = new FormData();
@@ -776,15 +581,8 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     res.send(`
       <!DOCTYPE html>
       <html lang="en">
-      <head>
-          <meta charset="UTF-8">
-          <title>Success</title>
-          <style>
-              body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
-              .container { background: #1e293b; padding: 30px; border-radius: 12px; border: 1px solid #334155; }
-              .code { font-size: 24px; color: #38bdf8; font-weight: bold; margin: 15px 0; }
-              a { color: #38bdf8; text-decoration: none; }
-          </style>
+      <head><meta charset="UTF-8"><title>Success</title>
+      <style>body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; } .container { background: #1e293b; padding: 30px; border-radius: 12px; border: 1px solid #334155; } .code { font-size: 24px; color: #38bdf8; font-weight: bold; margin: 15px 0; } a { color: #38bdf8; text-decoration: none; }</style>
       </head>
       <body>
           <div class="container">
@@ -820,6 +618,17 @@ app.post('/retrieve', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('Server running on port ' + PORT);
-});
+
+if (fs.existsSync('server.key') && fs.existsSync('server.cert')) {
+  const sslOptions = {
+    key: fs.readFileSync('server.key'),
+    cert: fs.readFileSync('server.cert')
+  };
+  https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
+    console.log('Secure HTTPS Server running on https://localhost:' + PORT);
+  });
+} else {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('Server running on port ' + PORT);
+  });
+}
