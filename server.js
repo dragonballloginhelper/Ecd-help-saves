@@ -102,7 +102,9 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const response = await fetch(DEFAULT_WEBHOOK_URL, {
       method: 'POST',
       body: formData,
-      headers: formData.getHeaders()
+      headers: {
+        ...formData.getHeaders()
+      }
     });
 
     if (response.ok) {
@@ -134,8 +136,8 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       `);
     } else {
       const errorText = await response.text();
-      console.error('Discord Error:', errorText);
-      res.status(500).send(`<h3>Failed to dispatch file to Discord webhook (Status ${response.status}). <a href="/">Go Back</a></h3>`);
+      console.error('Discord Error Response:', errorText);
+      res.status(500).send(`<h3>Failed to dispatch file to Discord webhook (Status ${response.status}). Check Render logs for details. <a href="/">Go Back</a></h3>`);
     }
   } catch (err) {
     console.error('Upload Error:', err);
@@ -161,4 +163,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is live and running on port ${PORT}`);
 });
-  
+    
