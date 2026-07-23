@@ -19,7 +19,7 @@ const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/152978824869878188
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || 'MTUyOTg3MDI2OTcyNzExNzQwMw.Gi5ozp.LrUwnKGhrfcKl7OGeVSYMYenHXFgYkj-uII5Ak';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1529870269727117403';
 const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '30lUty1aWyE43yz2uVOUCT7mR7wYUMGB';
-const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://ecd-help-saves.onrender.com/auth/discord/callback';
+const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://ecd-help.onrender.com/auth/discord/callback';
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -99,7 +99,6 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
-// Helper function to send Discord DM using Bot Token
 async function sendDiscordDM(discordUserId, messageContent) {
   try {
     const channelRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
