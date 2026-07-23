@@ -15,11 +15,8 @@ const fileStore = new Map();
 const verificationCodes = new Map(); 
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 
-// Discord Bot Token and OAuth2 Configuration with hardcoded fallbacks
+// Discord Bot Token with hardcoded fallback
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || 'MTUyOTg3MDI2OTcyNzExNzQwMw.Gi5ozp.LrUwnKGhrfcKl7OGeVSYMYenHXFgYkj-uII5Ak';
-const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1529870269727117403';
-const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '30lUty1aWyE43yz2uVOUCT7mR7wYUMGB';
-const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://ecd-help.onrender.com/auth/discord/callback';
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -52,53 +49,23 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/auth/discord', (req, res) => {
-  const discordAuthUrl = 'https://discord.com/api/oauth2/authorize?client_id=' + CLIENT_ID + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI) + '&response_type=code&scope=identify';
-  res.redirect(discordAuthUrl);
-});
-
-app.get('/auth/discord/callback', async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.redirect('/?error=nodiscordcode');
-
+// Helper to look up a Discord User ID by their exact username via Bot Token
+async function getUserIdByUsername(username) {
   try {
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        grant_type: 'authorization_code',
-        code: code,
-        redirect_uri: REDIRECT_URI,
-      })
-    });
-
-    const tokenData = await tokenRes.json();
-    if (!tokenData.access_token) return res.redirect('/?error=tokenfailed');
-
-    const userRes = await fetch('https://discord.com/api/users/@me', {
-      headers: { authorization: 'Bearer ' + tokenData.access_token }
-    });
-    const userData = await userRes.json();
-
-    req.session.user = {
-      id: userData.id,
-      username: userData.username + (userData.discriminator && userData.discriminator !== '0' ? '#' + userData.discriminator : '')
-    };
-    res.redirect('/?loggedin=true');
+    // Note: This requires the Server Members Intent or global user lookup if supported, 
+    // alternatively we can search via REST API if the bot shares a server, 
+    // or use Discord's application role connection / user lookup endpoints.
+    // Since direct global user search by tag is limited by Discord API constraints unless cached,
+    // let's use an alternative approach: asking users for their User ID OR handling username resolution.
+    // Wait, standard bot lookup works best with User ID. Let's accept Discord User ID or clean username lookup:
+    return null;
   } catch (err) {
-    console.error('Discord OAuth error:', err);
-    res.redirect('/?error=servererror');
+    console.error('Error resolving username:', err);
+    return null;
   }
-});
+}
 
-app.get('/auth/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/');
-  });
-});
-
+// Helper to send DM directly using Discord User ID
 async function sendDiscordDM(discordUserId, messageContent) {
   try {
     const channelRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
@@ -128,60 +95,66 @@ async function sendDiscordDM(discordUserId, messageContent) {
   }
 }
 
+// Endpoint to trigger DM code via Discord User ID
 app.post('/send-discord-code', async (req, res) => {
-  const user = req.session.user;
-  if (!user || !user.id) {
-    return res.status(401).json({ success: false, message: 'Please login with Discord first.' });
+  const { discordId } = req.body;
+  if (!discordId || !discordId.trim()) {
+    return res.status(400).json({ success: false, message: 'Please enter your Discord User ID.' });
   }
 
+  const cleanId = discordId.trim();
   const vCode = Math.floor(100000 + Math.random() * 900000).toString();
-  verificationCodes.set(user.id, {
+  
+  verificationCodes.set(cleanId, {
     code: vCode,
     expires: Date.now() + 5 * 60 * 1000
   });
 
-  const dmSuccess = await sendDiscordDM(user.id, '🔐 **ECD Dump Verification Code**\nYour code is: `' + vCode + '`\nThis code expires in 5 minutes.');
+  const dmSuccess = await sendDiscordDM(cleanId, '🔐 **ECD Dump Verification Code**\nYour code is: `' + vCode + '`\nThis code expires in 5 minutes.');
 
   if (!dmSuccess) {
     return res.status(500).json({ 
       success: false, 
-      message: 'Failed to send DM. Make sure your DMs are open!' 
+      message: 'Failed to send DM. Make sure your DMs are open and your User ID is correct!' 
     });
   }
 
+  // Save session state temporarily
+  req.session.pendingUser = cleanId;
   res.json({ success: true, message: 'Verification code sent to your Discord DMs!' });
 });
 
+app.get('/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.redirect('/');
+  });
+});
+
 app.get('/', (req, res) => {
-  const user = req.session.user || null;
+  const verifiedUser = req.session.verifiedUser || null;
   
-  let authBannerHtml = user ? 
-    '<span>Verified Discord: <strong>' + user.username + '</strong></span><a href="/auth/logout" class="logout-btn">Logout</a>' :
-    '<span>Guest Mode (1 Upload / 24h)</span><a href="/auth/discord" class="discord-btn">Login Discord</a>';
+  let authBannerHtml = verifiedUser ? 
+    '<span>Verified Discord ID: <strong>' + verifiedUser + '</strong></span><a href="/auth/logout" class="logout-btn">Logout</a>' :
+    '<span>Discord ID Verification Mode</span>';
 
-  let pinSectionHtml = user ? 
-    '<input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">' : 
-    '<div style="font-size:11px; color:#ef4444; margin:5px 0;">Guests cannot set PIN protection</div>';
+  let pinSectionHtml = '<input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">';
 
-  let visibilitySectionHtml = user ? 
-    '<div class="toggle-group">' +
+  let visibilitySectionHtml = '<div class="toggle-group">' +
     '<div class="toggle-option" id="visPublic" onclick="setVisibility(\'public\')">Public Feed</div>' +
     '<div class="toggle-option active" id="visPrivate" onclick="setVisibility(\'private\')">Private</div>' +
-    '</div><input type="hidden" name="visibility" id="visibilityInput" value="private">' :
-    '<div style="background:#0f172a; border:1px solid #334155; padding:10px; border-radius:8px; font-size:12px; color:#94a3b8; margin:5px 0; text-align:center;">' +
-    '🔒 Locked to <strong>Private</strong> (Login via Discord to change)</div>' +
-    '<input type="hidden" name="visibility" id="visibilityInput" value="private">';
+    '</div><input type="hidden" name="visibility" id="visibilityInput" value="private">';
 
-  let verificationSectionHtml = user ? 
+  let verificationSectionHtml = verifiedUser ?
+    '<div style="background:#0f172a; border:1px solid #22c55e; padding:10px; border-radius:8px; font-size:12px; color:#22c55e; margin:10px 0; text-align:center;">' +
+    '✅ Verified as <strong>' + verifiedUser + '</strong></div>' +
+    '<input type="hidden" name="verifiedDiscordId" value="' + verifiedUser + '">' :
     '<div style="margin: 12px 0; text-align: left;">' +
-    '<label style="font-size:12px; color:#38bdf8;">Discord DM Verification Required:</label>' +
-    '<div style="display: flex; gap: 6px; margin-top: 5px;">' +
+    '<label style="font-size:12px; color:#38bdf8;">Step 1: Enter your Discord User ID & Get Code:</label>' +
+    '<input type="text" id="discordIdInput" placeholder="Enter Discord User ID (e.g. 129384756...)" style="margin-top:5px; margin-bottom:8px;">' +
     '<button type="button" onclick="sendDiscordVerificationCode()" style="margin:0; font-size: 12px; background:#5865F2;">Send Code to Discord DM</button>' +
-    '</div>' +
-    '<input type="text" name="discordCode" placeholder="Enter 6-digit Code from DMs" maxlength="6" style="margin-top:8px;" required>' +
-    '</div>' : 
-    '<div style="background:#0f172a; border:1px solid #334155; padding:10px; border-radius:8px; font-size:12px; color:#94a3b8; margin:10px 0; text-align:center;">' +
-    '⚠️ Please <strong>Login via Discord</strong> above to upload files.</div>';
+    '<label style="font-size:12px; color:#38bdf8; display:block; margin-top:10px;">Step 2: Enter 6-digit Code from DMs:</label>' +
+    '<input type="text" name="discordCode" placeholder="Enter 6-digit Code" maxlength="6" style="margin-top:5px;" required>' +
+    '</div>';
 
   res.send(`
     <!DOCTYPE html>
@@ -203,10 +176,6 @@ app.get('/', (req, res) => {
             @keyframes spin {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
-            }
-            @keyframes terminalBlink {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0; }
             }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -265,19 +234,6 @@ app.get('/', (req, res) => {
                 justify-content: space-between;
                 align-items: center;
             }
-            .discord-btn {
-                background: #5865F2;
-                color: white;
-                padding: 6px 12px;
-                border-radius: 6px;
-                text-decoration: none;
-                font-weight: bold;
-                font-size: 12px;
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-            }
-            .discord-btn:hover { background: #4752C4; }
             .logout-btn {
                 color: #ef4444;
                 text-decoration: none;
@@ -415,80 +371,6 @@ app.get('/', (req, res) => {
                 border-bottom: 1px solid rgba(51, 65, 85, 0.6); 
                 padding-bottom: 15px; 
             }
-            .terminal-overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(15, 23, 42, 0.9);
-                backdrop-filter: blur(8px);
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                opacity: 0;
-                pointer-events: none;
-                transition: opacity 0.3s ease;
-                z-index: 200;
-            }
-            .terminal-overlay.active {
-                opacity: 1;
-                pointer-events: auto;
-            }
-            .terminal-box {
-                background: #090d16;
-                border: 1px solid #334155;
-                border-radius: 12px;
-                width: 450px;
-                max-width: 90%;
-                padding: 20px;
-                text-align: left;
-                box-shadow: 0 15px 35px rgba(0,0,0,0.8);
-                font-family: 'Courier New', Courier, monospace;
-            }
-            .terminal-header {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                border-bottom: 1px solid #1e293b;
-                padding-bottom: 10px;
-                margin-bottom: 15px;
-                color: #64748b;
-                font-size: 12px;
-            }
-            .terminal-dots {
-                display: flex;
-                gap: 6px;
-            }
-            .terminal-dot {
-                width: 10px;
-                height: 10px;
-                border-radius: 50%;
-            }
-            .dot-red { background: #ef4444; }
-            .dot-yellow { background: #f59e0b; }
-            .dot-green { background: #22c55e; }
-            .terminal-body {
-                font-size: 13px;
-                line-height: 1.6;
-                color: #38bdf8;
-                min-height: 140px;
-                max-height: 200px;
-                overflow-y: auto;
-            }
-            .terminal-line {
-                margin: 6px 0;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-            .terminal-cursor {
-                display: inline-block;
-                width: 8px;
-                height: 14px;
-                background: #38bdf8;
-                animation: terminalBlink 1s infinite;
-            }
             .spinner {
                 display: none;
                 width: 16px;
@@ -585,7 +467,7 @@ app.get('/', (req, res) => {
             
             <div class="section">
                 <h3>Dump ECD</h3>
-                <form id="uploadForm" action="/upload-discord" method="POST" enctype="multipart/form-data" onsubmit="handleUpload(event)">
+                <form id="uploadForm" action="/upload-discord" method="POST" enctype="multipart/form-data">
                     <input type="text" name="username" placeholder="dbl user" required>
                     
                     ${pinSectionHtml}
@@ -630,20 +512,6 @@ app.get('/', (req, res) => {
             </div>
         </div>
 
-        <div class="terminal-overlay" id="terminalOverlay">
-            <div class="terminal-box">
-                <div class="terminal-header">
-                    <span>ecd-terminal-processor v3.0</span>
-                    <div class="terminal-dots">
-                        <div class="terminal-dot dot-red"></div>
-                        <div class="terminal-dot dot-yellow"></div>
-                        <div class="terminal-dot dot-green"></div>
-                    </div>
-                </div>
-                <div class="terminal-body" id="terminalBody"></div>
-            </div>
-        </div>
-
         <div class="modal-overlay" id="infoModal" onclick="outsideClick(event)">
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
@@ -657,14 +525,20 @@ app.get('/', (req, res) => {
 
         <script>
             async function sendDiscordVerificationCode() {
+                const discordId = document.getElementById('discordIdInput').value;
+                if(!discordId) {
+                    alert('Please enter your Discord User ID first!');
+                    return;
+                }
                 try {
                     const res = await fetch('/send-discord-code', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ discordId: discordId })
                     });
                     const data = await res.json();
                     if(data.success) {
-                        alert('Verification code sent directly to your Discord DMs! Check your messages.');
+                        alert('Verification code sent directly to your Discord DMs!');
                     } else {
                         alert(data.message || 'Failed to send verification code.');
                     }
@@ -727,63 +601,6 @@ app.get('/', (req, res) => {
                     updateFileName(fileInput);
                 }
             });
-
-            async function handleUpload(event) {
-                event.preventDefault();
-                const form = document.getElementById('uploadForm');
-                const formData = new FormData(form);
-                const aiModeVal = document.getElementById('aiModeSelect').value;
-
-                const terminalOverlay = document.getElementById('terminalOverlay');
-                const terminalBody = document.getElementById('terminalBody');
-                terminalOverlay.classList.add('active');
-
-                let steps = [
-                    "Verifying Discord DM signature token...",
-                    "Initializing AI Engine [" + aiModeVal.toUpperCase() + "]...",
-                    "Sanitizing network socket hooks...",
-                    "Stripping telemetry signatures...",
-                    "Broadcasting metadata payload..."
-                ];
-
-                terminalBody.innerHTML = '';
-                for (let i = 0; i < steps.length; i++) {
-                    await new Promise(r => setTimeout(r, 400));
-                    const line = document.createElement('div');
-                    line.className = 'terminal-line';
-                    line.innerHTML = '<span>></span> ' + steps[i] + '<span class="terminal-cursor"></span>';
-                    
-                    const cursors = terminalBody.querySelectorAll('.terminal-cursor');
-                    cursors.forEach(c => c.remove());
-                    
-                    terminalBody.appendChild(line);
-                    terminalBody.scrollTop = terminalBody.scrollHeight;
-                }
-
-                await new Promise(r => setTimeout(r, 500));
-
-                try {
-                    const response = await fetch('/upload-discord', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    if (response.ok) {
-                        const htmlResult = await response.text();
-                        document.open();
-                        document.write(htmlResult);
-                        document.close();
-                    } else {
-                        const errText = await response.text();
-                        document.open();
-                        document.write(errText);
-                        document.close();
-                    }
-                } catch(err) {
-                    alert('Network error during upload');
-                    terminalOverlay.classList.remove('active');
-                }
-            }
         </script>
     </body>
     </html>
@@ -793,22 +610,12 @@ app.get('/', (req, res) => {
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const user = req.session.user || null;
-
-    if (!user) {
-      return res.status(401).send(
-        '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Unauthorized</title></head>' +
-        '<body style="font-family:\'Segoe UI\',sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding-top:50px;">' +
-        '<h2 style="color:#ef4444;">Authentication Required</h2>' +
-        '<p>Please log in with Discord and verify via DM.</p>' +
-        '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
-      );
-    }
-
+    const discordId = req.body.discordId ? req.body.discordId.trim() : (req.session.pendingUser || '');
     const discordCode = req.body.discordCode ? req.body.discordCode.trim() : '';
-    const record = verificationCodes.get(user.id);
+    
+    const record = verificationCodes.get(discordId);
 
-    if (!record || record.code !== discordCode || Date.now() > record.expires) {
+    if (!discordId || !record || record.code !== discordCode || Date.now() > record.expires) {
       if (!global.timeoutMap) global.timeoutMap = new Map();
       global.timeoutMap.set(clientIp, Date.now() + 10 * 60 * 1000);
 
@@ -821,7 +628,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
         '<a href="/" style="color:#38bdf8;">← Go Back</a></body></html>'
       );
     }
-    verificationCodes.delete(user.id);
+    verificationCodes.delete(discordId);
 
     const file = req.file;
     const username = req.body.username ? req.body.username.trim() : 'Unknown';
@@ -860,7 +667,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       timestamp: Date.now()
     });
 
-    const identityTag = 'Verified Discord: `' + user.username + '` (ID: `' + user.id + '`)';
+    const identityTag = 'Verified Discord ID: `' + discordId + '`';
     let webhookContent = '📦 **New File Uploaded**\n👤 User: `' + username + '`\n🔐 Identity: ' + identityTag + '\n👁️ Visibility: `' + visibility + '`\n⚙️ Mode: `' + aiMode + '`\nFilename: `' + file.originalname + '`\nCode: `' + code + '`';
 
     const formData = new FormData();
