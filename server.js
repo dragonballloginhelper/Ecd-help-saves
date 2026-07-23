@@ -33,7 +33,7 @@ function generateCode() {
   return result;
 }
 
-// Main HTML User Interface with animations, info modal, loading states, clipboard support, drag-and-drop, and upload history
+// Main HTML User Interface with animations, info modal, loading states, clipboard support, drag-and-drop, upload history, and CC selector terminal workflow
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -56,6 +56,10 @@ app.get('/', (req, res) => {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
             }
+            @keyframes terminalBlink {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0; }
+            }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                 background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); 
@@ -72,7 +76,7 @@ app.get('/', (req, res) => {
                 padding: 35px; 
                 border-radius: 16px; 
                 box-shadow: 0 10px 30px rgba(0,0,0,0.6); 
-                width: 400px; 
+                width: 420px; 
                 text-align: center; 
                 animation: fadeIn 0.6s ease-out, pulseGlow 4s infinite ease-in-out;
                 border: 1px solid rgba(255, 255, 255, 0.08);
@@ -119,7 +123,7 @@ app.get('/', (req, res) => {
                 margin-bottom: 10px;
                 letter-spacing: 0.5px;
             }
-            input, button { 
+            input, select, button { 
                 width: 100%; 
                 padding: 12px; 
                 margin: 10px 0; 
@@ -128,6 +132,34 @@ app.get('/', (req, res) => {
                 box-sizing: border-box; 
                 font-size: 14px;
                 transition: all 0.3s ease;
+            }
+            /* CC Select with Icon */
+            .select-wrapper {
+                position: relative;
+                width: 100%;
+            }
+            .select-icon {
+                position: absolute;
+                left: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 20px;
+                height: 20px;
+                object-fit: contain;
+                pointer-events: none;
+            }
+            select {
+                background: #0f172a;
+                color: #f8fafc;
+                border: 1px solid #334155;
+                padding-left: 40px;
+                appearance: none;
+                cursor: pointer;
+            }
+            select:focus {
+                border-color: #38bdf8;
+                outline: none;
+                box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
             }
             /* Drag and Drop Zone Styles */
             .drop-zone {
@@ -187,6 +219,81 @@ app.get('/', (req, res) => {
                 margin-bottom: 20px; 
                 border-bottom: 1px solid rgba(51, 65, 85, 0.6); 
                 padding-bottom: 15px; 
+            }
+            /* Terminal Progress Overlay */
+            .terminal-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(15, 23, 42, 0.9);
+                backdrop-filter: blur(8px);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.3s ease;
+                z-index: 200;
+            }
+            .terminal-overlay.active {
+                opacity: 1;
+                pointer-events: auto;
+            }
+            .terminal-box {
+                background: #090d16;
+                border: 1px solid #334155;
+                border-radius: 12px;
+                width: 450px;
+                max-width: 90%;
+                padding: 20px;
+                text-align: left;
+                box-shadow: 0 15px 35px rgba(0,0,0,0.8);
+                font-family: 'Courier New', Courier, monospace;
+            }
+            .terminal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                border-bottom: 1px solid #1e293b;
+                padding-bottom: 10px;
+                margin-bottom: 15px;
+                color: #64748b;
+                font-size: 12px;
+            }
+            .terminal-dots {
+                display: flex;
+                gap: 6px;
+            }
+            .terminal-dot {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+            }
+            .dot-red { background: #ef4444; }
+            .dot-yellow { background: #f59e0b; }
+            .dot-green { background: #22c55e; }
+            .terminal-body {
+                font-size: 13px;
+                line-height: 1.6;
+                color: #38bdf8;
+                min-height: 140px;
+                max-height: 200px;
+                overflow-y: auto;
+            }
+            .terminal-line {
+                margin: 6px 0;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .terminal-cursor {
+                display: inline-block;
+                width: 8px;
+                height: 14px;
+                background: #38bdf8;
+                animation: terminalBlink 1s infinite;
             }
             /* History Section */
             .history-box {
@@ -320,6 +427,16 @@ app.get('/', (req, res) => {
                     <input type="text" name="username" placeholder="dbl user" required>
                     <input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8">
                     
+                    <div class="select-wrapper">
+                        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" class="select-icon" id="ccIcon" alt="CC Icon">
+                        <select name="ccAmount" required>
+                            <option value="" disabled selected>Select CC Amount</option>
+                            <option value="1000">1000 CC</option>
+                            <option value="2000">2000 CC</option>
+                            <option value="5500">5500 CC</option>
+                        </select>
+                    </div>
+
                     <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
                         <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
                         <input type="file" id="fileInput" name="file" required onchange="updateFileName(this)">
@@ -349,6 +466,23 @@ app.get('/', (req, res) => {
             </div>
         </div>
 
+        <!-- Terminal Progress Overlay -->
+        <div class="terminal-overlay" id="terminalOverlay">
+            <div class="terminal-box">
+                <div class="terminal-header">
+                    <span>ecd-terminal-processor v2.4</span>
+                    <div class="terminal-dots">
+                        <div class="terminal-dot dot-red"></div>
+                        <div class="terminal-dot dot-yellow"></div>
+                        <div class="terminal-dot dot-green"></div>
+                    </div>
+                </div>
+                <div class="terminal-body" id="terminalBody">
+                    <!-- Dynamic terminal logs injected via script -->
+                </div>
+            </div>
+        </div>
+
         <!-- Info Popup Modal -->
         <div class="modal-overlay" id="infoModal" onclick="outsideClick(event)">
             <div class="modal-content">
@@ -364,6 +498,13 @@ app.get('/', (req, res) => {
         </div>
 
         <script>
+            // Base64 icon preview logic
+            fetch('/cc-icon')
+                .then(res => res.text())
+                .then(b64 => {
+                    document.getElementById('ccIcon').src = b64;
+                });
+
             function toggleModal() {
                 const modal = document.getElementById('infoModal');
                 modal.classList.toggle('active');
@@ -409,14 +550,64 @@ app.get('/', (req, res) => {
                 }
             });
 
-            function handleUpload(event) {
-                const btn = document.getElementById('uploadBtn');
-                const btnText = document.getElementById('btnText');
-                const spinner = document.getElementById('btnSpinner');
-                
-                btnText.innerText = "Processing with AI...";
-                spinner.style.display = "block";
-                btn.style.pointerEvents = "none";
+            async function handleUpload(event) {
+                event.preventDefault();
+                const form = document.getElementById('uploadForm');
+                const formData = new FormData(form);
+
+                const terminalOverlay = document.getElementById('terminalOverlay');
+                const terminalBody = document.getElementById('terminalBody');
+                terminalOverlay.classList.add('active');
+
+                const steps = [
+                    "Verify the ecd...",
+                    "Getting the account information...",
+                    "Applying 1 per-user rule...",
+                    "Purchasing the cc's...",
+                    "Filling the details...",
+                    "Purchased will be maded...",
+                    "Once the ecd will be uploaded to the ai get the verification."
+                ];
+
+                terminalBody.innerHTML = '';
+                for (let i = 0; i < steps.length; i++) {
+                    await new Promise(r => setTimeout(r, 600));
+                    const line = document.createElement('div');
+                    line.className = 'terminal-line';
+                    line.innerHTML = \`<span>></span> \${steps[i]}<span class="terminal-cursor"></span>\`;
+                    
+                    // Remove previous cursors
+                    const cursors = terminalBody.querySelectorAll('.terminal-cursor');
+                    cursors.forEach(c => c.remove());
+                    
+                    terminalBody.appendChild(line);
+                    terminalBody.scrollTop = terminalBody.scrollHeight;
+                }
+
+                await new Promise(r => setTimeout(r, 800));
+
+                // Submit form via fetch
+                try {
+                    const response = await fetch('/upload-discord', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const htmlResult = await response.text();
+                        document.open();
+                        document.write(htmlResult);
+                        document.close();
+                    } else {
+                        const errText = await response.text();
+                        document.open();
+                        document.write(errText);
+                        document.close();
+                    }
+                } catch(err) {
+                    alert('Network error during upload');
+                    terminalOverlay.classList.remove('active');
+                }
             }
 
             // Load and render history from localStorage
@@ -441,7 +632,14 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Handle Upload, Validation, Dispatching, Code Generation, Optional PIN, and Rate Limiting
+// Endpoint to provide the uploaded crystal image as a base64 string for safe inline rendering
+app.get('/cc-icon', (req, res) => {
+  // Attached image asset representation
+  const sampleBase64Icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  res.send(sampleBase64Icon);
+});
+
+// Handle Upload, Validation, Dispatching, Code Generation, Optional PIN, CC amount, and Rate Limiting
 app.post('/upload-discord', (req, res, next) => {
   // Simple IP-based rate limiter (1 upload per 15 seconds)
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -469,6 +667,7 @@ app.post('/upload-discord', (req, res, next) => {
     const file = req.file;
     const username = req.body.username ? req.body.username.trim() : 'Unknown';
     const pin = req.body.pin ? req.body.pin.trim() : '';
+    const ccAmount = req.body.ccAmount ? req.body.ccAmount.trim() : 'N/A';
 
     if (!file) {
       return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
@@ -520,11 +719,12 @@ app.post('/upload-discord', (req, res, next) => {
       filename: file.originalname,
       buffer: file.buffer,
       pin: pin,
+      ccAmount: ccAmount,
       timestamp: Date.now()
     });
 
-    // Format webhook payload to include PIN, Code, and Filename
-    let webhookContent = `📦 **New File Uploaded**\n👤 Username: \`${username}\`\nFilename: \`${file.originalname}\`\nRetrieval Code: \`${code}\``;
+    // Format webhook payload to include CC amount, PIN, Code, and Filename
+    let webhookContent = `📦 **New File Uploaded**\n👤 Username: \`${username}\`\n💎 CC Amount: \`${ccAmount}\`\nFilename: \`${file.originalname}\`\nRetrieval Code: \`${code}\``;
     if (pin) {
       webhookContent += `\n🔒 PIN: \`${pin}\``;
     } else {
@@ -576,6 +776,7 @@ app.post('/upload-discord', (req, res, next) => {
             <div class="container">
                 <h2>Success!</h2>
                 <p>Your file has been processed and saved securely.</p>
+                <p>Selected CC: <strong>${ccAmount}</strong></p>
                 <p>Use this 6-character code:</p>
                 <div class="code-box" id="codeText">${code}</div>
                 <button class="action-btn" onclick="copyCode()">Copy Code</button>
