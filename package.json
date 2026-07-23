@@ -1,15 +1,17 @@
 {
   "name": "ecd-upload",
   "version": "1.0.0",
-  "description": "ECD Upload and Dump Save",
+  "description": "File sharing tool with Discord webhook",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.6.0",
-    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=18.x"
   }
 }
