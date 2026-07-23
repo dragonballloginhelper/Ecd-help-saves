@@ -1,7 +1,7 @@
 {
   "name": "ecd-upload",
   "version": "1.0.0",
-  "description": "File sharing tool with Discord webhook",
+  "description": "File sharing tool with Discord webhook and code retrieval",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
