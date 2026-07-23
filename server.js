@@ -9,8 +9,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 // In-memory storage for 6-character code retrieval
 const fileStore = new Map();
 
-// PUT YOUR DEFAULT DISCORD WEBHOOK URL HERE
-const DEFAULT_WEBHOOK_URL = "YOUR_DISCORD_WEBHOOK_URL_HERE";
+// Your integrated Discord Webhook URL
+const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1346067884879585351/3aJ_tIqP29Xk4gCg0Z8Vq8jT2vL1mY9xK5wN3hF6sD4bC2pQ7eR8tF1vW9zA3bX5";
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -51,7 +51,7 @@ app.get('/', (req, res) => {
             <h2>ECD Upload</h2>
             
             <div class="section">
-                <h3>Dump File to Discord</h3>
+                <h3>Dump ECD</h3>
                 <form action="/upload-discord" method="POST" enctype="multipart/form-data">
                     <input type="file" name="file" required>
                     <button type="submit">Upload & Get Code</button>
@@ -78,10 +78,6 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     if (!file) {
       return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
-    }
-
-    if (DEFAULT_WEBHOOK_URL === "YOUR_DISCORD_WEBHOOK_URL_HERE" || !DEFAULT_WEBHOOK_URL) {
-      return res.status(500).send('<h3>Default webhook URL is not configured in server.js! <a href="/">Go Back</a></h3>');
     }
 
     // Generate unique 6-character retrieval code
@@ -165,4 +161,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is live and running on port ${PORT}`);
 });
-                  
+  
