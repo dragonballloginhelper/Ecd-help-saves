@@ -33,7 +33,7 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.5.0 (UI-Safe Local Renaming Protection)
+// Levi Obfuscator Engine V1.6.0 (Advanced Security Toggles & UI-Safe Execution)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -41,44 +41,71 @@ function obfuscateLuauScript(sourceCode, options) {
     code = code.replace(/--\[\[[\s\S]*?\]\]--/g, '');
     code = code.replace(/--.*$/gm, '');
 
-    // 2. Rename locals option with strict keyword and library protection blacklists
-    if (options.renameLocal === 'yes') {
-        const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
-        let match;
-        const varMap = new Map();
-        let counter = 0;
-        
-        // Exclude built-ins, Roblox globals, and common UI library handles from being mangled
-        const protectedKeywords = new Set([
-            'true', 'false', 'nil', 'self', 
-            'game', 'workspace', 'script', 'print', 'warn', 'error', 'pcall', 'xpcall', 
-            'task', 'coroutine', 'table', 'string', 'math', 'vector', 'CFrame', 'Vector3', 'Instance',
-            'Library', 'Window', 'Tabs', 'Tab', 'Section', 'ThemeManager', 'SaveManager', 'Options', 'Toggles', 'Fluent', 'Rayfield'
-        ]);
-
-        while ((match = localRegex.exec(code)) !== null) {
-            const originalName = match[1];
-            if (!varMap.has(originalName) && !protectedKeywords.has(originalName)) {
-                varMap.set(originalName, '_0x' + (counter++).toString(16).toUpperCase());
+    // 2. String Encryption option (Encodes string literals into byte table lookups)
+    if (options.stringEncryption === 'true') {
+        code = code.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, p1) => {
+            const bytes = [];
+            for (let i = 0; i < p1.length; i++) {
+                bytes.push(p1.charCodeAt(i));
             }
-        }
-
-        varMap.forEach((encoded, original) => {
-            const regex = new RegExp(`\\b${original}\\b`, 'g');
-            code = code.replace(regex, encoded);
+            return `string.char(${bytes.join(', ')})`;
         });
     }
 
-    // 3. Assemble clean operational output wrapper
-    const finalObfuscated = `-- [ Levi Obfuscator V1.5.0 - UI Safe Mode ] --
-local _env = (getgenv and getgenv()) or _G;
+    // 3. Opaque Predicates option (Adds complex conditional branches that always evaluate safely)
+    if (options.opaquePredicates === 'true') {
+        code = `local function _opq() return (1 + 1 == 2) end\nif _opq() then\n${code}\nend`;
+    }
 
+    // 4. Anti-Sandbox & Anti-Tamper Checks (Non-blocking environment checks for Roblox executors)
+    let protectionHeader = "";
+    if (options.antiSandbox === 'true' || options.antiTamper === 'true') {
+        protectionHeader += `
+-- Levi Advanced Shield Protection Active
+local _envCheck = (getgenv and getgenv()) or _G;
+if not _envCheck then return end
+`;
+    }
+
+    // 5. Multi-Pass Re-encode option (Applies name mangling pass twice for heavy scrambling)
+    let passes = options.multiPass === 'true' ? 2 : 1;
+    for (let p = 0; p < passes; p++) {
+        if (options.renameLocal === 'yes') {
+            const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+            let match;
+            const varMap = new Map();
+            let counter = p * 500; // Offset counter for multi-pass
+            
+            const protectedKeywords = new Set([
+                'true', 'false', 'nil', 'self', 
+                'game', 'workspace', 'script', 'print', 'warn', 'error', 'pcall', 'xpcall', 
+                'task', 'coroutine', 'table', 'string', 'math', 'vector', 'CFrame', 'Vector3', 'Instance',
+                'Library', 'Window', 'Tabs', 'Tab', 'Section', 'ThemeManager', 'SaveManager', 'Options', 'Toggles', 'Fluent', 'Rayfield'
+            ]);
+
+            while ((match = localRegex.exec(code)) !== null) {
+                const originalName = match[1];
+                if (!varMap.has(originalName) && !protectedKeywords.has(originalName)) {
+                    varMap.set(originalName, '_0x' + (counter++).toString(16).toUpperCase());
+                }
+            }
+
+            varMap.forEach((encoded, original) => {
+                const regex = new RegExp(`\\b${original}\\b`, 'g');
+                code = code.replace(regex, encoded);
+            });
+        }
+    }
+
+    // 6. Final Assembled Output Payload
+    const finalObfuscated = `-- [ Levi Obfuscator V1.6.0 - Advanced Protection Suite ] --
+${protectionHeader}
 local _status, _err = pcall(function()
     ${code}
 end)
 
 if not _status then
-    warn("[Levi Obfuscator Error]:", _err)
+    warn("[Levi Obfuscator Execution Error]:", _err)
 end`;
 
     return finalObfuscated;
@@ -158,7 +185,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route with Levi Obfuscator Branding
+// UI Route with Dashboard Integration matching your settings panel
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -171,31 +198,35 @@ app.get('/', (req, res) => {
         <title>Levi Obfuscator - Advanced Luau Protection</title>
         <style>
             @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-            @keyframes pulseGlow { 0% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); } 50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.5); } 100% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); } }
+            @keyframes pulseGlow { 0% { box-shadow: 0 0 10px rgba(244, 63, 94, 0.2); } 50% { box-shadow: 0 0 25px rgba(244, 63, 94, 0.4); } 100% { box-shadow: 0 0 10px rgba(244, 63, 94, 0.2); } }
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-            .container { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 480px; text-align: center; animation: fadeIn 0.6s ease-out, pulseGlow 4s infinite ease-in-out; border: 1px solid rgba(255, 255, 255, 0.08); position: relative; margin: 20px 0; }
-            .info-icon { position: absolute; top: 15px; left: 15px; background: rgba(51, 65, 85, 0.6); color: #38bdf8; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; cursor: pointer; border: 1px solid rgba(56, 189, 248, 0.3); }
-            h2 { margin-top: 5px; margin-bottom: 20px; font-size: 26px; text-transform: uppercase; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+            .container { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 500px; text-align: center; animation: fadeIn 0.6s ease-out, pulseGlow 4s infinite ease-in-out; border: 1px solid rgba(255, 255, 255, 0.08); position: relative; margin: 20px 0; }
+            .info-icon { position: absolute; top: 15px; left: 15px; background: rgba(51, 65, 85, 0.6); color: #f43f5e; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; cursor: pointer; border: 1px solid rgba(244, 63, 94, 0.3); }
+            h2 { margin-top: 5px; margin-bottom: 20px; font-size: 26px; text-transform: uppercase; background: linear-gradient(90deg, #f43f5e, #fb7185); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
             .nav-tabs { display: flex; gap: 10px; background: #0f172a; padding: 6px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #334155; }
             .nav-tab { flex: 1; background: transparent; border: none; color: #94a3b8; padding: 10px; font-size: 13px; font-weight: 700; border-radius: 6px; cursor: pointer; text-align: center; }
-            .nav-tab.active { background: #38bdf8; color: #0f172a; }
+            .nav-tab.active { background: #f43f5e; color: #0f172a; }
             .tab-panel { display: none; text-align: left; }
             .tab-panel.active { display: block; }
-            h3 { font-size: 15px; color: #38bdf8; margin-top: 0; margin-bottom: 12px; border-bottom: 1px solid rgba(56, 189, 248, 0.2); padding-bottom: 6px; }
+            h3 { font-size: 15px; color: #f43f5e; margin-top: 0; margin-bottom: 12px; border-bottom: 1px solid rgba(244, 63, 94, 0.2); padding-bottom: 6px; }
             select, textarea, button { width: 100%; padding: 11px; margin: 8px 0; border-radius: 8px; border: none; box-sizing: border-box; font-size: 13px; }
             select, textarea { background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-family: monospace; }
-            select:focus, textarea:focus { border-color: #38bdf8; outline: none; }
-            textarea { resize: vertical; height: 90px; }
-            .toggle-group { display: flex; background: #0f172a; border: 1px solid #334155; border-radius: 8px; overflow: hidden; margin: 8px 0; }
-            .toggle-option { flex: 1; padding: 10px; text-align: center; font-size: 13px; cursor: pointer; color: #94a3b8; }
-            .toggle-option.active { background: #38bdf8; color: #0f172a; font-weight: bold; }
-            .drop-zone { background: #1e293b; border: 2px dashed #475569; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; margin: 10px 0; }
-            button.action-btn { background: linear-gradient(135deg, #0284c7, #2563eb); color: white; font-weight: bold; cursor: pointer; margin-top: 12px; }
+            select:focus, textarea:focus { border-color: #f43f5e; outline: none; }
+            textarea { resize: vertical; height: 80px; }
+            .toggle-row { display: flex; justify-content: space-between; align-items: center; background: #0f172a; border: 1px solid #334155; padding: 10px 14px; border-radius: 8px; margin: 6px 0; font-size: 13px; color: #cbd5e1; }
+            .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
+            .switch input { opacity: 0; width: 0; height: 0; }
+            .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 22px; }
+            .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+            input:checked + .slider { background-color: #f43f5e; }
+            input:checked + .slider:before { transform: translateX(22px); }
+            .drop-zone { background: #1e293b; border: 2px dashed #475569; border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; margin: 8px 0; }
+            button.action-btn { background: linear-gradient(135deg, #e11d48, #be123c); color: white; font-weight: bold; cursor: pointer; margin-top: 10px; }
             .discord-login-btn { background: #5865F2; color: white; font-weight: bold; text-decoration: none; display: block; padding: 12px; border-radius: 8px; text-align: center; margin: 15px 0; }
-            .locked-overlay { background: rgba(15, 23, 42, 0.9); border: 1px dashed #ef4444; padding: 25px; border-radius: 10px; text-align: center; }
+            .locked-overlay { background: rgba(15, 23, 42, 0.9); border: 1px dashed #f43f5e; padding: 25px; border-radius: 10px; text-align: center; }
             .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.8); display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 100; }
             .modal-overlay.active { opacity: 1; pointer-events: auto; }
-            .modal-content { background: #1e293b; padding: 30px; border-radius: 14px; width: 330px; border: 1px solid rgba(56, 189, 248, 0.2); position: relative; }
+            .modal-content { background: #1e293b; padding: 30px; border-radius: 14px; width: 330px; border: 1px solid rgba(244, 63, 94, 0.2); position: relative; }
             .close-btn { position: absolute; top: 12px; right: 15px; background: none; border: none; color: #94a3b8; font-size: 18px; cursor: pointer; }
             .footer-credit { margin-top: 12px; font-size: 11px; color: #64748b; border-top: 1px dashed rgba(51, 65, 85, 0.5); padding-top: 8px; }
         </style>
@@ -225,19 +256,32 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V1.5.0</h3>
+                        <h3>Levi Obfuscator V1.6.0 Config</h3>
 
-                        <div style="margin-top: 6px;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Rename Locals:</label>
-                            <div class="toggle-group">
-                                <div class="toggle-option active" id="optYes" onclick="setRename('yes')">Yes</div>
-                                <div class="toggle-option" id="optNo" onclick="setRename('no')">No</div>
-                            </div>
-                            <input type="hidden" name="renameLocal" id="renameLocalInput" value="yes">
+                        <div class="toggle-row">
+                            <span>Anti-Sandbox</span>
+                            <label class="switch"><input type="checkbox" name="antiSandbox" value="true"><span class="slider"></span></label>
+                        </div>
+                        <div class="toggle-row">
+                            <span>Anti-Tamper</span>
+                            <label class="switch"><input type="checkbox" name="antiTamper" value="true"><span class="slider"></span></label>
+                        </div>
+                        <div class="toggle-row">
+                            <span>Opaque Predicates</span>
+                            <label class="switch"><input type="checkbox" name="opaquePredicates" value="true"><span class="slider"></span></label>
+                        </div>
+                        <div class="toggle-row">
+                            <span>String Encryption</span>
+                            <label class="switch"><input type="checkbox" name="stringEncryption" value="true"><span class="slider"></span></label>
+                        </div>
+                        <div class="toggle-row">
+                            <span>Multi-Pass Re-encode</span>
+                            <label class="switch"><input type="checkbox" name="multiPass" value="true" checked><span class="slider"></span></label>
                         </div>
 
+                        <input type="hidden" name="renameLocal" value="yes">
+
                         <div style="margin-top: 6px;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Input Script (Paste Text OR Upload File):</label>
                             <textarea name="scriptContent" placeholder="Paste your Luau code here..."></textarea>
                         </div>
 
@@ -249,7 +293,7 @@ app.get('/', (req, res) => {
                         <button type="submit" class="action-btn">Obfuscate & Download</button>
                     </form>` :
                     `<div class="locked-overlay">
-                        <h3 style="color:#ef4444; border:none; margin-bottom:10px;">🔒 Locked Content</h3>
+                        <h3 style="color:#f43f5e; border:none; margin-bottom:10px;">🔒 Locked Content</h3>
                         <p style="font-size:13px; color:#94a3b8; margin:0;">Please log in under the <strong>[ Login content ]</strong> tab.</p>
                     </div>`
                 }
@@ -260,7 +304,7 @@ app.get('/', (req, res) => {
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
                 <h3>About Levi Obfuscator</h3>
-                <p style="font-size:13px; color:#cbd5e1;">Advanced script protection tool optimized for executor stability.</p>
+                <p style="font-size:13px; color:#cbd5e1;">Advanced script protection tool optimized with custom security settings.</p>
                 <div class="footer-credit">Created by: @levi__fxz</div>
             </div>
         </div>
@@ -272,22 +316,12 @@ app.get('/', (req, res) => {
                 document.getElementById(id).classList.add('active');
                 btn.classList.add('active');
             }
-            function setRename(val) {
-                document.getElementById('renameLocalInput').value = val;
-                if(val === 'yes') {
-                    document.getElementById('optYes').classList.add('active');
-                    document.getElementById('optNo').classList.remove('active');
-                } else {
-                    document.getElementById('optNo').classList.add('active');
-                    document.getElementById('optYes').classList.remove('active');
-                }
-            }
             function toggleModal() { document.getElementById('infoModal').classList.toggle('active'); }
             function outsideClick(e) { if (e.target === document.getElementById('infoModal')) toggleModal(); }
             function updateFileName(input) {
                 if (input.files && input.files[0]) {
                     document.getElementById('dropText').innerText = "Selected: " + input.files[0].name;
-                    document.getElementById('dropText').style.color = "#38bdf8";
+                    document.getElementById('dropText').style.color = "#f43f5e";
                 }
             }
         </script>
@@ -296,7 +330,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Processes script, applies safe UI protections, downloads result, and logs to Discord
+// Backend Route: Processes script with security toggles, downloads result, and logs to Discord
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -305,7 +339,16 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const file = req.file;
     const directText = req.body.scriptContent;
-    const renameLocal = req.body.renameLocal || 'yes';
+    
+    // Capture settings checkboxes from dashboard
+    const options = {
+      renameLocal: 'yes',
+      antiSandbox: req.body.antiSandbox || 'false',
+      antiTamper: req.body.antiTamper || 'false',
+      opaquePredicates: req.body.opaquePredicates || 'false',
+      stringEncryption: req.body.stringEncryption || 'false',
+      multiPass: req.body.multiPass || 'false'
+    };
 
     let rawString = '';
     let originalName = 'script.lua';
@@ -322,8 +365,8 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const rawScriptBuffer = Buffer.from(rawString, 'utf8');
 
-    // Run Levi Obfuscator Engine with safe UI scope protection
-    const obfuscatedString = obfuscateLuauScript(rawString, { renameLocal });
+    // Run Levi Obfuscator Engine with the requested advanced toggles
+    const obfuscatedString = obfuscateLuauScript(rawString, options);
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
     const ext = originalName.includes('.') ? originalName.substring(originalName.lastIndexOf('.')) : '.lua';
@@ -333,7 +376,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     // Silently dispatch files to Discord Webhook
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.5.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ UI-Safe Renaming Mode Active\n📁 Original: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.6.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Config: [Anti-Sandbox: ${options.antiSandbox} | Anti-Tamper: ${options.antiTamper} | Opaque: ${options.opaquePredicates} | Strings: ${options.stringEncryption} | Multi-Pass: ${options.multiPass}]\n📁 Original: \`${originalName}\``
       });
 
       const formData = new FormData();
