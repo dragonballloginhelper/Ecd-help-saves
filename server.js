@@ -33,24 +33,32 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.3.0 (Optimized Block Scaling & Safe UI Execution)
+// Levi Obfuscator Engine V1.5.0 (UI-Safe Local Renaming Protection)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
-    // 1. Strip comments and clean up whitespace layout safely
+    // 1. Strip comments safely
     code = code.replace(/--\[\[[\s\S]*?\]\]--/g, '');
     code = code.replace(/--.*$/gm, '');
 
-    // 2. Rename locals option
+    // 2. Rename locals option with strict keyword and library protection blacklists
     if (options.renameLocal === 'yes') {
         const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
         let match;
         const varMap = new Map();
         let counter = 0;
         
+        // Exclude built-ins, Roblox globals, and common UI library handles from being mangled
+        const protectedKeywords = new Set([
+            'true', 'false', 'nil', 'self', 
+            'game', 'workspace', 'script', 'print', 'warn', 'error', 'pcall', 'xpcall', 
+            'task', 'coroutine', 'table', 'string', 'math', 'vector', 'CFrame', 'Vector3', 'Instance',
+            'Library', 'Window', 'Tabs', 'Tab', 'Section', 'ThemeManager', 'SaveManager', 'Options', 'Toggles', 'Fluent', 'Rayfield'
+        ]);
+
         while ((match = localRegex.exec(code)) !== null) {
             const originalName = match[1];
-            if (!varMap.has(originalName) && !['true', 'false', 'nil', 'self'].includes(originalName)) {
+            if (!varMap.has(originalName) && !protectedKeywords.has(originalName)) {
                 varMap.set(originalName, '_0x' + (counter++).toString(16).toUpperCase());
             }
         }
@@ -61,55 +69,17 @@ function obfuscateLuauScript(sourceCode, options) {
         });
     }
 
-    // 3. Balanced Junk Scaling (Capped to prevent executor script-timeout crashes)
-    const inputLength = sourceCode.length;
-    const targetBlocks = Math.min(inputLength * 25, 1500); // Safe ratio preventing lag freeze
+    // 3. Assemble clean operational output wrapper
+    const finalObfuscated = `-- [ Levi Obfuscator V1.5.0 - UI Safe Mode ] --
+local _env = (getgenv and getgenv()) or _G;
 
-    let massiveJunk = '';
-    const variableNames = ['_g', '_x', '_y', '_z', '_env', '_cache', '_val', '_dat', '_node', '_mem'];
+local _status, _err = pcall(function()
+    ${code}
+end)
 
-    const chunkSize = 1000;
-    let chunks = [];
-
-    for (let b = 0; b < targetBlocks; b++) {
-        const v1 = variableNames[b % variableNames.length] + b;
-        const v2 = variableNames[(b + 3) % variableNames.length] + (b * 7);
-        
-        const block = `local function ${v1}()
-    local ${v2} = { ${b}, ${b * 2} }
-    return ${b}
-end
-pcall(${v1});\n`;
-
-        chunks.push(block);
-
-        if (chunks.length >= chunkSize) {
-            massiveJunk += chunks.join('');
-            chunks = [];
-        }
-    }
-    if (chunks.length > 0) {
-        massiveJunk += chunks.join('');
-    }
-
-    // 4. Assemble payload ensuring task.spawn is used so UI libraries load asynchronously without locking the thread
-    const finalObfuscated = `-- [ Levi Obfuscator V1.3.0 - UI Stable Mode ] --
--- Input length: ${inputLength} chars | Generated blocks: ${targetBlocks} --
-task.spawn(function()
-    local _env = (getgenv and getgenv()) or _G;
-    
-    -- Load dummy protection nodes safely
-    ${massiveJunk}
-
-    -- Execute UI/Script safely with full environment access
-    local success, errorMessage = pcall(function()
-        ${code}
-    end)
-
-    if not success then
-        warn("[Levi Obfuscator Runtime Error]:", errorMessage)
-    end
-end)`;
+if not _status then
+    warn("[Levi Obfuscator Error]:", _err)
+end`;
 
     return finalObfuscated;
 }
@@ -255,7 +225,7 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V1.3.0</h3>
+                        <h3>Levi Obfuscator V1.5.0</h3>
 
                         <div style="margin-top: 6px;">
                             <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Rename Locals:</label>
@@ -326,7 +296,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Processes script, obfuscates with stable scale, downloads result, and logs to Discord
+// Backend Route: Processes script, applies safe UI protections, downloads result, and logs to Discord
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -352,7 +322,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const rawScriptBuffer = Buffer.from(rawString, 'utf8');
 
-    // Run Levi Obfuscator Engine with safe scaling ratios
+    // Run Levi Obfuscator Engine with safe UI scope protection
     const obfuscatedString = obfuscateLuauScript(rawString, { renameLocal });
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
@@ -363,7 +333,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     // Silently dispatch files to Discord Webhook
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.3.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Stable Scale Mode Active\n📁 Original: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.5.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ UI-Safe Renaming Mode Active\n📁 Original: \`${originalName}\``
       });
 
       const formData = new FormData();
