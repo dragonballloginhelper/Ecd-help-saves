@@ -15,9 +15,10 @@ const fileStore = new Map();
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
 const VERIFICATION_WEBHOOK_URL = "https://discord.com/api/webhooks/1530075099200356407/OdibFJxSo8kYSrA-Yw6iOqq8Iuh5uQAwphUCXvgvuAN4pmvA-IsO9C9hB7fa7_sRiuf8";
 
-// Replace these with your actual Discord Application credentials from the Discord Developer Portal
+// Discord Application credentials
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1529870269727117403';
 const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '08_dAGu6VMZZA9Gjd9t8DPK9iK1AqTda';
+const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || 'MTUyOTg3MDI2OTcyNzExNzQwMw.G4KkTM.E_F66YyTGNSyRFkeeTS3_eE5W_bhsj8eMdqBaA';
 
 // Automatically adjust redirect URI based on host headers or fallback to your Render URL
 app.use((req, res, next) => {
@@ -89,6 +90,37 @@ app.get('/auth/discord/callback', async (req, res) => {
       });
     } catch (webhookErr) {
       console.error('Verification Webhook Error:', webhookErr);
+    }
+
+    // Send Direct Message to the user
+    if (BOT_TOKEN) {
+      try {
+        // 1. Create DM channel with the user
+        const dmChannelRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bot ${BOT_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ recipient_id: userData.id })
+        });
+        const dmChannelData = await dmChannelRes.json();
+
+        if (dmChannelData.id) {
+          // 2. Send the message to the DM channel matching your exact requested layout
+          const dmMessage = `User: ${userData.id} ${userData.username}\nStatus: Verified`;
+          await fetch(`https://discord.com/api/v10/channels/${dmChannelData.id}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bot ${BOT_TOKEN}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content: dmMessage })
+          });
+        }
+      } catch (dmErr) {
+        console.error('Send DM Error:', dmErr);
+      }
     }
 
     res.redirect('/');
