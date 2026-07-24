@@ -1,633 +1,443 @@
 const express = require('express');
 const multer = require('multer');
-const fetch = require('node-fetch');
-const FormData = require('form-data');
-const session = require('express-session');
-const https = require('https');
+const path = require('path');
 const fs = require('fs');
+const fetch = require('node-fetch');
+const session = require('express-session');
+const FormData = require('form-data');
 
 const app = express();
+const upload = multer({ dest: 'uploads/' });
 
-const upload = multer({ 
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+// Configuration (Using your hardcoded Discord keys or environment variables)
+const CLIENT_ID = process.env.CLIENT_ID || '1529870269727117403';
+const CLIENT_SECRET = process.env.CLIENT_SECRET || '08_dAGu6VMZZA9Gjd9t8DPK9iK1AqTda';
+
+// Automatically adjust redirect URI based on host headers or fallback to Render URL format
+app.use((req, res, next) => {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    req.activeRedirectUri = `${protocol}://${host}/auth/discord/callback`;
+    next();
 });
-
-const fileStore = new Map();
-const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
-
-const CLIENT_ID = '1529870269727117403';
-const CLIENT_SECRET = '08_dAGu6VMZZA9Gjd9t8DPK9iK1AqTda';
-const REDIRECT_URI = 'https://localhost:3000/auth/discord/callback';
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
-  secret: 'ecd-dump-secret-key-9988',
-  resave: false,
-  saveUninitialized: true,
+    secret: 'ecd_dump_secure_random_key_extended_ultimate_v9',
+    resave: false,
+    saveUninitialized: false
 }));
 
+if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
+}
+
+// Comprehensive Global Layout Template with the [ GAMES ] Tab and full styling suite
+const renderLayout = (title, content, user) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title} - ECD Dump Platform</title>
+    <style>
+        :root { 
+            background-color: #0f172a; 
+            color: #f8fafc; 
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
+        }
+        body { 
+            margin: 0; 
+            padding: 0; 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 100vh; 
+        }
+        nav { 
+            background: #1e293b; 
+            padding: 1rem 2rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid #334155; 
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        .logo { 
+            font-weight: 700; 
+            font-size: 1.25rem; 
+            color: #38bdf8; 
+            text-decoration: none; 
+            letter-spacing: 0.05em;
+        }
+        .nav-links { 
+            display: flex; 
+            gap: 1.25rem; 
+            align-items: center; 
+        }
+        .nav-links a { 
+            color: #cbd5e1; 
+            text-decoration: none; 
+            font-weight: 500; 
+            padding: 0.5rem 1rem; 
+            border-radius: 0.375rem; 
+            transition: all 0.2s ease; 
+        }
+        .nav-links a:hover, .nav-links a.active { 
+            background: #334155; 
+            color: #ffffff; 
+        }
+        main { 
+            flex: 1; 
+            padding: 2.5rem 1.5rem; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            width: 100%; 
+            box-sizing: border-box; 
+        }
+        .card { 
+            background: #1e293b; 
+            border: 1px solid #334155; 
+            border-radius: 0.75rem; 
+            padding: 1.75rem; 
+            margin-bottom: 1.75rem; 
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.2); 
+        }
+        .card h2, .card h3 { 
+            margin-top: 0; 
+            color: #f1f5f9; 
+        }
+        button, .btn { 
+            background: #0284c7; 
+            color: white; 
+            border: none; 
+            padding: 0.75rem 1.5rem; 
+            border-radius: 0.5rem; 
+            font-weight: 600; 
+            cursor: pointer; 
+            text-decoration: none; 
+            display: inline-block; 
+            transition: background 0.2s; 
+        }
+        button:hover, .btn:hover { 
+            background: #0ea5e9; 
+        }
+        .btn-discord { 
+            background: #5865F2; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 0.5rem; 
+        }
+        .btn-discord:hover { 
+            background: #4752C4; 
+        }
+        input[type="file"] { 
+            background: #0f172a; 
+            border: 1px dashed #475569; 
+            color: #cbd5e1; 
+            padding: 1.25rem; 
+            border-radius: 0.5rem; 
+            width: 100%; 
+            box-sizing: border-box; 
+            margin-bottom: 1rem; 
+            cursor: pointer;
+        }
+        .file-list { 
+            list-style: none; 
+            padding: 0; 
+            margin: 0; 
+        }
+        .file-list li { 
+            background: #0f172a; 
+            padding: 0.75rem 1rem; 
+            border-radius: 0.375rem; 
+            margin-bottom: 0.5rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border: 1px solid #334155;
+        }
+        .file-list a { 
+            color: #38bdf8; 
+            text-decoration: none; 
+            font-weight: 500; 
+        }
+        .file-list a:hover { 
+            text-decoration: underline; 
+        }
+        .user-badge {
+            background: #0f172a;
+            border: 1px solid #334155;
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.375rem;
+            color: #38bdf8;
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/" class="logo">⚡ ECD DUMP PLATFORM</a>
+        <div class="nav-links">
+            <a href="/" class="${title === 'Home' ? 'active' : ''}">Home & Dumps</a>
+            <a href="/games" class="${title === 'Games Hub' ? 'active' : ''}">[ GAMES ]</a>
+            ${user ? `
+                <span class="user-badge">👤 ${user.username}</span> 
+                <a href="/logout" style="background: #ef4444; padding: 0.4rem 0.8rem; font-size: 0.9rem;">Logout</a>
+            ` : `
+                <a href="/auth/discord" class="btn-discord">Login with Discord</a>
+            `}
+        </div>
+    </nav>
+    <main>
+        ${content}
+    </main>
+</body>
+</html>
+`;
+
+// Discord OAuth2 Authentication Initiation Route
 app.get('/auth/discord', (req, res) => {
-  const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=identify`;
-  res.redirect(discordAuthUrl);
+    const discordLoginUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(req.activeRedirectUri)}&response_type=code&scope=identify`;
+    res.redirect(discordLoginUrl);
 });
 
+// Discord OAuth2 Callback Handler Route
 app.get('/auth/discord/callback', async (req, res) => {
-  const code = req.query.code;
-  if (!code) {
-    return res.redirect('/?error=NoCodeProvided');
-  }
-
-  try {
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        grant_type: 'authorization_code',
-        code: code,
-        redirect_uri: REDIRECT_URI,
-      })
-    });
-
-    const tokenData = await tokenRes.json();
-    if (!tokenData.access_token) {
-      return res.redirect('/?error=TokenExchangeFailed');
+    const code = req.query.code;
+    if (!code) {
+        return res.status(400).send('Error: No authorization code was provided by Discord.');
     }
 
-    const userRes = await fetch('https://discord.com/api/users/@me', {
-      headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
-    });
+    try {
+        const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+            method: 'POST',
+            body: new URLSearchParams({
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET,
+                grant_type: 'authorization_code',
+                code: code,
+                redirect_uri: req.activeRedirectUri,
+            }),
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
 
-    const userData = await userRes.json();
-    if (!userData.id) {
-      return res.redirect('/?error=FetchUserFailed');
+        const tokenData = await tokenResponse.json();
+        if (!tokenData.access_token) {
+            return res.status(400).send('Error: Failed to obtain access token from Discord OAuth API.');
+        }
+
+        const userResponse = await fetch('https://discord.com/api/users/@me', {
+            headers: { authorization: `${tokenData.token_type} ${tokenData.access_token}` },
+        });
+        const userData = await userResponse.json();
+
+        req.session.user = { 
+            id: userData.id, 
+            username: userData.username 
+        };
+        
+        res.redirect('/');
+    } catch (err) {
+        console.error('Discord Auth Exception:', err);
+        res.status(500).send('Internal Server Error occurred during Discord authentication processing.');
     }
-
-    req.session.verifiedUser = `${userData.username} (${userData.id})`;
-    res.redirect('/');
-  } catch (err) {
-    console.error('OAuth Error:', err);
-    res.redirect('/?error=ServerError');
-  }
 });
 
-app.get('/auth/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/');
-  });
+// Logout Route
+app.get('/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.redirect('/');
+    });
 });
 
+// Home Route: File management, upload system & access control
 app.get('/', (req, res) => {
-  const verifiedUser = req.session.verifiedUser || null;
+    let files = [];
+    try {
+        files = fs.readdirSync('uploads');
+    } catch (e) {
+        files = [];
+    }
 
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ECD Dump</title>
-        <style>
-            @keyframes fadeIn {
-                from { opacity: 0; transform: translateY(15px); }
-                to { opacity: 1; transform: translateY(0); }
-            }
-            @keyframes pulseGlow {
-                0% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
-                50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.5); }
-                100% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
-            }
-            body { 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); 
-                color: #f8fafc; 
-                display: flex; 
-                justify-content: center; 
-                align-items: center; 
-                min-height: 100vh; 
-                margin: 0; 
-            }
-            .container { 
-                background: rgba(30, 41, 59, 0.85); 
-                backdrop-filter: blur(12px);
-                padding: 30px; 
-                border-radius: 16px; 
-                box-shadow: 0 10px 30px rgba(0,0,0,0.6); 
-                width: 460px; 
-                text-align: center; 
-                animation: fadeIn 0.6s ease-out, pulseGlow 4s infinite ease-in-out;
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                position: relative;
-                margin: 20px 0;
-            }
-            .info-icon {
-                position: absolute;
-                top: 15px;
-                left: 15px;
-                background: rgba(51, 65, 85, 0.6);
-                color: #38bdf8;
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: bold;
-                font-size: 14px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                border: 1px solid rgba(56, 189, 248, 0.3);
-            }
-            .info-icon:hover {
-                background: #38bdf8;
-                color: #0f172a;
-                transform: scale(1.1);
-            }
-            h2 { 
-                margin-top: 5px;
-                margin-bottom: 20px; 
-                color: #38bdf8; 
-                letter-spacing: 1px;
-                font-size: 26px;
-                text-transform: uppercase;
-                background: linear-gradient(90deg, #38bdf8, #818cf8);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-            }
-            
-            .nav-tabs {
-                display: flex;
-                gap: 10px;
-                background: #0f172a;
-                padding: 6px;
-                border-radius: 10px;
-                margin-bottom: 20px;
-                border: 1px solid #334155;
-            }
-            .nav-tab {
-                flex: 1;
-                background: transparent;
-                border: none;
-                color: #94a3b8;
-                padding: 10px;
-                font-size: 13px;
-                font-weight: 700;
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                box-shadow: none;
-                margin: 0;
-                text-align: center;
-            }
-            .nav-tab:hover {
-                color: #f8fafc;
-                background: rgba(56, 189, 248, 0.1);
-            }
-            .nav-tab.active {
-                background: #38bdf8;
-                color: #0f172a;
-                box-shadow: 0 2px 8px rgba(56, 189, 248, 0.4);
-            }
+    const fileListHtml = files.length > 0 
+        ? files.map(file => `
+            <li>
+                <span>📄 ${file}</span>
+                <a href="/download/${file}">Download Payload</a>
+            </li>`).join('')
+        : '<p style="color: #94a3b8; text-align: center; margin: 1rem 0;">No active payloads or dumps uploaded yet.</p>';
 
-            .tab-panel {
-                display: none;
-                animation: fadeIn 0.4s ease-out;
-                text-align: left;
-            }
-            .tab-panel.active {
-                display: block;
-            }
+    const content = `
+        <div class="card">
+            <h2>🚀 Upload Payload Dump</h2>
+            <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 1.25rem;">Select any file or script payload to host it securely on your server instance.</p>
+            ${req.session.user ? `
+                <form action="/upload" method="POST" enctype="multipart/form-data">
+                    <input type="file" name="payload" required />
+                    <button type="submit">Upload Payload Instantly</button>
+                </form>
+            ` : `
+                <div style="background: #0f172a; padding: 1.25rem; border-radius: 0.5rem; border: 1px solid #334155; text-align: center;">
+                    <p style="color: #94a3b8; margin-top: 0; margin-bottom: 1rem;">Authentication required to upload or modify file payloads.</p>
+                    <a href="/auth/discord" class="btn btn-discord">Login with Discord to Upload</a>
+                </div>
+            `}
+        </div>
+        
+        <div class="card">
+            <h2>📂 Available Dumps (${files.length})</h2>
+            <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 1.25rem;">Browse and download active public or private payload archives hosted on this node.</p>
+            <ul class="file-list">
+                ${fileListHtml}
+            </ul>
+        </div>
+    `;
+    res.send(renderLayout('Home', content, req.session.user));
+});
 
-            h3 {
-                font-size: 15px;
-                color: #38bdf8;
-                margin-top: 0;
-                margin-bottom: 12px;
-                letter-spacing: 0.5px;
-                border-bottom: 1px solid rgba(56, 189, 248, 0.2);
-                padding-bottom: 6px;
-            }
-            input, select, button { 
-                width: 100%; 
-                padding: 12px; 
-                margin: 8px 0; 
-                border-radius: 8px; 
-                border: none; 
-                box-sizing: border-box; 
-                font-size: 14px;
-                transition: all 0.3s ease;
-            }
-            .select-wrapper {
-                position: relative;
-                width: 100%;
-            }
-            select {
-                background: #0f172a;
-                color: #f8fafc;
-                border: 1px solid #334155;
-                padding-left: 12px;
-                appearance: none;
-                cursor: pointer;
-            }
-            select:focus {
-                border-color: #38bdf8;
-                outline: none;
-            }
-            .toggle-group {
-                display: flex;
-                background: #0f172a;
-                border: 1px solid #334155;
-                border-radius: 8px;
-                overflow: hidden;
-                margin: 10px 0;
-            }
-            .toggle-option {
-                flex: 1;
-                padding: 10px;
-                text-align: center;
-                font-size: 13px;
-                cursor: pointer;
-                color: #94a3b8;
-                transition: all 0.3s;
-            }
-            .toggle-option.active {
-                background: #38bdf8;
-                color: #0f172a;
-                font-weight: bold;
-            }
-            .drop-zone {
-                background: #1e293b;
-                border: 2px dashed #475569;
-                border-radius: 8px;
-                padding: 20px;
-                text-align: center;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                margin: 10px 0;
-            }
-            .drop-zone.dragover {
-                border-color: #38bdf8;
-                background: rgba(56, 189, 248, 0.05);
-            }
-            .drop-zone input[type="file"] {
-                display: none;
-            }
-            .drop-zone-text {
-                font-size: 13px;
-                color: #94a3b8;
-                pointer-events: none;
-            }
-            input[type="text"] {
-                background: #0f172a;
-                color: #f8fafc;
-                border: 1px solid #334155;
-                text-align: center;
-                letter-spacing: 1px;
-            }
-            input[type="text"]:focus {
-                border-color: #38bdf8;
-                outline: none;
-            }
-            .captcha-box {
-                background: #0f172a;
-                border: 1px solid #334155;
-                border-radius: 8px;
-                padding: 12px;
-                margin: 10px 0;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                font-size: 13px;
-            }
-            button.action-btn { 
-                background: linear-gradient(135deg, #0284c7, #2563eb); 
-                color: white; 
-                font-weight: bold; 
-                cursor: pointer; 
-                box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                gap: 8px;
-                margin-top: 15px;
-            }
-            button.action-btn:hover { 
-                background: linear-gradient(135deg, #0369a1, #1d4ed8);
-                transform: translateY(-2px);
-            }
-            .discord-login-btn {
-                background: #5865F2;
-                color: white;
-                font-weight: bold;
-                text-decoration: none;
-                display: block;
-                padding: 12px;
-                border-radius: 8px;
-                text-align: center;
-                margin: 15px 0;
-                transition: background 0.3s;
-            }
-            .discord-login-btn:hover {
-                background: #4752C4;
-            }
-            .locked-overlay {
-                background: rgba(15, 23, 42, 0.9);
-                border: 1px dashed #ef4444;
-                padding: 25px;
-                border-radius: 10px;
-                text-align: center;
-                color: #f8fafc;
-            }
-            .modal-overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(15, 23, 42, 0.8);
-                backdrop-filter: blur(5px);
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                opacity: 0;
-                pointer-events: none;
-                transition: opacity 0.3s ease;
-                z-index: 100;
-            }
-            .modal-overlay.active {
-                opacity: 1;
-                pointer-events: auto;
-            }
-            .modal-content {
-                background: #1e293b;
-                padding: 30px;
-                border-radius: 14px;
-                width: 330px;
-                text-align: left;
-                border: 1px solid rgba(56, 189, 248, 0.2);
-                position: relative;
-            }
-            .close-btn {
-                position: absolute;
-                top: 12px;
-                right: 15px;
-                background: none;
-                border: none;
-                color: #94a3b8;
-                font-size: 18px;
-                cursor: pointer;
-            }
-            .footer-credit {
-                margin-top: 12px;
-                font-size: 11px;
-                color: #64748b;
-                border-top: 1px dashed rgba(51, 65, 85, 0.5);
-                padding-top: 8px;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="info-icon" onclick="toggleModal()">i</div>
-            <h2>ECD Dump</h2>
+// Handle Upload POST with Authentication Guard
+app.post('/upload', upload.single('payload'), (req, res) => {
+    if (!req.session.user) {
+        return res.status(401).send('Unauthorized: You must be logged in via Discord to execute uploads.');
+    }
+    res.redirect('/');
+});
 
-            <div class="nav-tabs">
-                <button type="button" class="nav-tab active" onclick="switchTab('loginTab', this)">[ Login content ]</button>
-                <button type="button" class="nav-tab" onclick="switchTab('mainTab', this)">[ Main content ]</button>
+// Secure Download Route
+app.get('/download/:filename', (req, res) => {
+    const safeName = path.basename(req.params.filename);
+    const filePath = path.join(__dirname, 'uploads', safeName);
+    if (fs.existsSync(filePath)) {
+        res.download(filePath);
+    } else {
+        res.status(404).send('Error: Requested dump file could not be located on the server storage.');
+    }
+});
+
+// [ GAMES ] Hub Route (Pack Opening + Connect Boxes Mechanics)
+app.get('/games', (req, res) => {
+    const content = `
+        <div style="margin-bottom: 2rem;">
+            <h1>🎮 Arcade & Interactive Mini-Games</h1>
+            <p style="color: #94a3b8;">Take a break from handling dumps. Open randomized reward packages or jump into custom layout sequence linking challenges!</p>
+        </div>
+        
+        <!-- Pack Opening Section -->
+        <div class="card">
+            <h3>🎁 Mystery Pack Opening System</h3>
+            <p style="color: #94a3b8; font-size: 0.95rem;">Test your drop rates and pull rare modular components.</p>
+            <button onclick="openPack()" style="margin-top: 0.5rem; margin-bottom: 1rem;">Open Mystery Pack</button>
+            <div id="packResult" style="padding: 1rem; background: #0f172a; border-radius: 0.5rem; border: 1px solid #334155; font-size: 1.1rem; font-weight: bold; color: #38bdf8; min-height: 24px; text-align: center;">
+                Ready to open your first pack...
             </div>
-
-            <!-- TAB 1: LOGIN CONTENT -->
-            <div id="loginTab" class="tab-panel active">
-                <h3>Discord Authentication</h3>
-                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Sign in securely with your Discord account to unlock main features.</p>
-                
-                ${verifiedUser ? 
-                    `<div style="background:#0f172a; border:1px solid #22c55e; padding:15px; border-radius:8px; font-size:13px; color:#22c55e; margin:10px 0; text-align:center;">
-                        ✅ Logged in as<br><strong>${verifiedUser}</strong>
-                    </div>
-                    <a href="/auth/logout" style="display:block; text-align:center; color:#ef4444; text-decoration:none; font-size:12px; margin-top:10px;">Logout / Switch Account</a>` :
-                    `<a href="/auth/discord" class="discord-login-btn">Login with Discord</a>`
-                }
-            </div>
-
-            <!-- TAB 2: MAIN CONTENT -->
-            <div id="mainTab" class="tab-panel">
-                ${verifiedUser ? 
-                    `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Upload Payload</h3>
-                        <input type="text" name="username" placeholder="dbl user" required style="margin-top:0;">
-                        
-                        <div style="margin-top: 10px;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px;">Protection PIN:</label>
-                            <input type="text" name="pin" placeholder="Optional PIN (e.g., 1234)" maxlength="8" style="margin-top:0;">
-                        </div>
-
-                        <div class="select-wrapper" style="margin-top: 8px;">
-                            <select name="aiMode" id="aiModeSelect">
-                                <option value="standard" selected>AI Mode: Standard Clean</option>
-                                <option value="aggressive">AI Mode: Aggressive Bypass</option>
-                                <option value="stealth">AI Mode: Ghost Stealth</option>
-                            </select>
-                        </div>
-
-                        <div style="margin-top: 10px;">
-                            <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:6px;">File Feed Visibility:</label>
-                            <div class="toggle-group">
-                                <div class="toggle-option" id="visPublic" onclick="setVisibility('public')">Public Feed</div>
-                                <div class="toggle-option active" id="visPrivate" onclick="setVisibility('private')">Private</div>
-                            </div>
-                            <input type="hidden" name="visibility" id="visibilityInput" value="private">
-                        </div>
-
-                        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" style="margin-top:10px;">
-                            <div class="drop-zone-text" id="dropText">Click or Drag & Drop ECD file here</div>
-                            <input type="file" id="fileInput" name="file" required onchange="updateFileName(this)">
-                        </div>
-
-                        <div class="captcha-box">
-                            <label style="display:flex; align-items:center; cursor:pointer;">
-                                <input type="checkbox" name="captcha" required style="width:auto; margin-right:10px; accent-color:#38bdf8;"> 
-                                <span>Verify Human Checkpoint</span>
-                            </label>
-                            <span style="color:#38bdf8; font-size:11px;">Anti-Bot v2</span>
-                        </div>
-
-                        <button type="submit" class="action-btn">Upload & Get Code</button>
-                    </form>
-
-                    <hr style="border:0; border-top:1px solid #334155; margin:20px 0;">
-
-                    <h3>Retrieve File</h3>
-                    <form action="/retrieve" method="POST">
-                        <input type="text" name="code" placeholder="ENTER CODE" maxlength="6" required style="margin-top:0;">
-                        <input type="text" name="pin" placeholder="ENTER PIN (IF SET)" maxlength="8">
-                        <button type="submit" class="action-btn" style="background: linear-gradient(135deg, #059669, #0d9488);">Download File</button>
-                    </form>` :
-                    `<div class="locked-overlay">
-                        <h3 style="color:#ef4444; border:none; margin-bottom:10px;">🔒 Content Locked</h3>
-                        <p style="font-size:13px; color:#94a3b8; margin:0;">You must log in under the <strong>[ Login content ]</strong> tab before accessing tool functions.</p>
-                    </div>`
-                }
-            </div>
-
         </div>
 
-        <div class="modal-overlay" id="infoModal" onclick="outsideClick(event)">
-            <div class="modal-content">
-                <button class="close-btn" onclick="toggleModal()">&times;</button>
-                <h3>About ECD Dump</h3>
-                <p style="font-size:13px; color:#cbd5e1;">Secure platform to strip telemetry signatures and prevent bans.</p>
-                <div class="footer-credit">
-                    Created by: @levi__fxz on telegram, instagram and eren__lx on X
-                </div>
+        <!-- Connect Boxes Mechanics Game -->
+        <div class="card">
+            <h3>📦 Connect Boxes Sequence Game</h3>
+            <p style="color: #94a3b8; font-size: 0.95rem;">Follow the highlighted terminal nodes in order and keep your connection active!</p>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: #0f172a; padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid #334155;">
+                <span id="gameScore" style="font-weight: bold; font-size: 1.05rem;">Score: 0</span>
+                <span id="gameStatus" style="color: #38bdf8; font-size: 0.9rem;">Status: Idle</span>
+            </div>
+
+            <div id="boxContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 320px; margin: 0 auto 1.5rem auto;">
+                <div class="play-box" onclick="hitBox(1)" style="background:#0f172a; height:90px; display:flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; font-size: 1.5rem; font-weight: bold; border: 2px solid #334155; transition: all 0.2s;">1</div>
+                <div class="play-box" onclick="hitBox(2)" style="background:#0f172a; height:90px; display:flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; font-size: 1.5rem; font-weight: bold; border: 2px solid #334155; transition: all 0.2s;">2</div>
+                <div class="play-box" onclick="hitBox(3)" style="background:#0f172a; height:90px; display:flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; font-size: 1.5rem; font-weight: bold; border: 2px solid #334155; transition: all 0.2s;">3</div>
+            </div>
+            
+            <div style="text-align: center;">
+                <button onclick="startGame()">Start Sequence Game</button>
             </div>
         </div>
 
         <script>
-            function switchTab(tabId, btnElement) {
-                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-                document.getElementById(tabId).classList.add('active');
-                btnElement.classList.add('active');
+            // Pack Opening Logic
+            function openPack() {
+                const rewards = [
+                    { name: 'Common Shard 📦', color: '#cbd5e1' },
+                    { name: 'Uncommon Component ⚙️', color: '#38bdf8' },
+                    { name: 'Rare Circuit ⚡', color: '#818cf8' },
+                    { name: 'EPIC CORE 🔥', color: '#c084fc' },
+                    { name: 'LEGENDARY SYNAPSE 🌟', color: '#f43f5e' }
+                ];
+                const rand = Math.random();
+                let selected;
+                if (rand > 0.95) selected = rewards[4];
+                else if (rand > 0.80) selected = rewards[3];
+                else if (rand > 0.55) selected = rewards[2];
+                else if (rand > 0.30) selected = rewards[1];
+                else selected = rewards[0];
+
+                const resultEl = document.getElementById('packResult');
+                resultEl.style.color = selected.color;
+                resultEl.innerText = '🎁 Pulled Reward: ' + selected.name;
             }
 
-            function setVisibility(mode) {
-                document.getElementById('visibilityInput').value = mode;
-                if(mode === 'public') {
-                    document.getElementById('visPublic').classList.add('active');
-                    document.getElementById('visPrivate').classList.remove('active');
+            // Connect Boxes Mechanics Logic
+            let score = 0;
+            let activeTarget = 1;
+            let gameActive = false;
+
+            function startGame() {
+                score = 0;
+                gameActive = true;
+                activeTarget = Math.floor(Math.random() * 3) + 1;
+                document.getElementById('gameStatus').innerText = 'Status: Active Connection';
+                updateUI();
+            }
+
+            function hitBox(boxNum) {
+                if (!gameActive) return;
+                
+                if (boxNum === activeTarget) {
+                    score += 15;
+                    activeTarget = Math.floor(Math.random() * 3) + 1;
+                    updateUI();
                 } else {
-                    document.getElementById('visPrivate').classList.add('active');
-                    document.getElementById('visPublic').classList.remove('active');
+                    gameActive = false;
+                    document.getElementById('gameStatus').innerText = 'Status: Sequence Broken (Game Over)';
+                    document.querySelectorAll('.play-box').forEach(el => {
+                        el.style.borderColor = '#ef4444';
+                        el.style.background = '#7f1d1d';
+                    });
+                    setTimeout(() => resetBoxesVisual(), 1500);
                 }
             }
 
-            function toggleModal() {
-                document.getElementById('infoModal').classList.toggle('active');
+            function updateUI() {
+                document.getElementById('gameScore').innerText = 'Score: ' + score;
+                document.querySelectorAll('.play-box').forEach((el, idx) => {
+                    if ((idx + 1) === activeTarget) {
+                        el.style.borderColor = '#38bdf8';
+                        el.style.background = '#0284c7';
+                        el.style.color = '#ffffff';
+                    } else {
+                        el.style.borderColor = '#334155';
+                        el.style.background = '#0f172a';
+                        el.style.color = '#94a3b8';
+                    }
+                });
             }
-            function outsideClick(event) {
-                if (event.target === document.getElementById('infoModal')) {
-                    document.getElementById('infoModal').classList.remove('active');
-                }
-            }
-            function updateFileName(input) {
-                const dropText = document.getElementById('dropText');
-                if (input.files && input.files[0]) {
-                    dropText.innerText = "Selected: " + input.files[0].name;
-                    dropText.style.color = "#38bdf8";
-                }
+
+            function resetBoxesVisual() {
+                document.querySelectorAll('.play-box').forEach(el => {
+                    el.style.borderColor = '#334155';
+                    el.style.background = '#0f172a';
+                    el.style.color = '#f8fafc';
+                });
+                document.getElementById('gameStatus').innerText = 'Status: Idle';
             }
         </script>
-    </body>
-    </html>
-  `);
-});
-
-app.post('/upload-discord', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.session.verifiedUser) {
-      return res.status(403).send('<h3>Unauthorized. Please log in first. <a href="/">Go Back</a></h3>');
-    }
-
-    const file = req.file;
-    const username = req.body.username ? req.body.username.trim() : 'Unknown';
-    const pin = req.body.pin ? req.body.pin.trim() : '';
-    const aiMode = req.body.aiMode ? req.body.aiMode.trim() : 'standard';
-    const visibility = req.body.visibility === 'public' ? 'public' : 'private';
-
-    if (!file) {
-      return res.status(400).send('<h3>No file uploaded. <a href="/">Go Back</a></h3>');
-    }
-
-    const filenameRegex = /^ecd\d+/i;
-    if (!filenameRegex.test(file.originalname)) {
-      return res.status(400).send('<h3>Invalid ECD format. <a href="/">Go Back</a></h3>');
-    }
-
-    let code = '';
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    do {
-      code = '';
-      for (let i = 0; i < 6; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-    } while (fileStore.has(code));
-
-    fileStore.set(code, {
-      filename: file.originalname,
-      buffer: file.buffer,
-      pin: pin,
-      visibility: visibility,
-      timestamp: Date.now()
-    });
-
-    const identityTag = 'Verified Discord User: `' + req.session.verifiedUser + '`';
-    let webhookContent = '📦 **New File Uploaded**\n👤 User: `' + username + '`\n🔐 Identity: ' + identityTag + '\n👁️ Visibility: `' + visibility + '`\n⚙️ Mode: `' + aiMode + '`\nFilename: `' + file.originalname + '`\nCode: `' + code + '`';
-
-    const formData = new FormData();
-    formData.append('file', file.buffer, { filename: file.originalname });
-    formData.append('payload_json', JSON.stringify({ content: webhookContent }));
-
-    await fetch(DEFAULT_WEBHOOK_URL, {
-      method: 'POST',
-      body: formData,
-      headers: { ...formData.getHeaders() }
-    });
-
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head><meta charset="UTF-8"><title>Success</title>
-      <style>body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; } .container { background: #1e293b; padding: 30px; border-radius: 12px; border: 1px solid #334155; } .code { font-size: 24px; color: #38bdf8; font-weight: bold; margin: 15px 0; } a { color: #38bdf8; text-decoration: none; }</style>
-      </head>
-      <body>
-          <div class="container">
-              <h2>Upload Successful!</h2>
-              <p>Your retrieval code is:</p>
-              <div class="code">${code}</div>
-              <a href="/">← Return Home</a>
-          </div>
-      </body>
-      </html>
-    `);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Server Error');
-  }
-});
-
-app.post('/retrieve', (req, res) => {
-  const code = req.body.code ? req.body.code.trim().toUpperCase() : '';
-  const inputPin = req.body.pin ? req.body.pin.trim() : '';
-  const fileData = fileStore.get(code);
-  
-  if (!fileData) {
-    return res.status(404).send('<h3>File not found. <a href="/">Go Back</a></h3>');
-  }
-
-  if (fileData.pin && fileData.pin !== inputPin) {
-    return res.status(401).send('<h3>Incorrect PIN. <a href="/">Go Back</a></h3>');
-  }
-
-  res.setHeader('Content-Disposition', 'attachment; filename="' + fileData.filename + '"');
-  res.send(fileData.buffer);
+    `;
+    res.send(renderLayout('Games Hub', content, req.session.user));
 });
 
 const PORT = process.env.PORT || 3000;
-
-if (fs.existsSync('server.key') && fs.existsSync('server.cert')) {
-  const sslOptions = {
-    key: fs.readFileSync('server.key'),
-    cert: fs.readFileSync('server.cert')
-  };
-  https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
-    console.log('Secure HTTPS Server running on https://localhost:' + PORT);
-  });
-} else {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log('Server running on port ' + PORT);
-  });
-}
+app.listen(PORT, () => {
+    console.log('ECD Dump Server initialized successfully with full configuration layout on port ' + PORT);
+});
