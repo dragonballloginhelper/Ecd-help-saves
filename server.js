@@ -13,6 +13,7 @@ const upload = multer({
 
 const fileStore = new Map();
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
+const VERIFICATION_WEBHOOK_URL = "https://discord.com/api/webhooks/1530075099200356407/OdibFJxSo8kYSrA-Yw6iOqq8Iuh5uQAwphUCXvgvuAN4pmvA-IsO9C9hB7fa7_sRiuf8";
 
 // Replace these with your actual Discord Application credentials from the Discord Developer Portal
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1529870269727117403';
@@ -76,6 +77,20 @@ app.get('/auth/discord/callback', async (req, res) => {
 
     // Save user identity in session
     req.session.verifiedUser = `${userData.username} (${userData.id})`;
+
+    // Send verification log to webhook
+    try {
+      await fetch(VERIFICATION_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `🔐 **New User Verified**\n👤 Username: \`${userData.username}\`\n🆔 ID: \`${userData.id}\`\n🕒 Timestamp: <t:${Math.floor(Date.now() / 1000)}:F>`
+        })
+      });
+    } catch (webhookErr) {
+      console.error('Verification Webhook Error:', webhookErr);
+    }
+
     res.redirect('/');
   } catch (err) {
     console.error('OAuth Error:', err);
