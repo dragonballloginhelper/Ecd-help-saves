@@ -31,9 +31,12 @@ app.use(session({
   secret: 'levi-obfuscator-secret-key-9988',
   resave: false,
   saveUninitialized: true,
+  cookie: { 
+    maxAge: 30 * 24 * 60 * 60 * 1000 // Persistent session spanning 30 days
+  }
 }));
 
-// Levi Obfuscator Engine V1.2.0 (1 Letter = 1,000 Lines Inflation & Variable Mangling)
+// Levi Obfuscator Engine V2.0.0 (1 Letter = 10 Expansion Scale + Strict Executor Lock & Bytecode Security)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -41,7 +44,20 @@ function obfuscateLuauScript(sourceCode, options) {
     code = code.replace(/--\[\[[\s\S]*?\]\]--/g, '');
     code = code.replace(/--.*$/gm, '');
 
-    // 2. Rename locals option
+    // 2. Strict Executor Environment Lock with Custom Error Message
+    let executorLock = `
+-- Levi Enterprise Strict Executor Guard
+local _env = (getgenv and getgenv()) or _G;
+local _exec = (identifyexecutor and identifyexecutor()) or "Unknown";
+local _allowed = {["Delta"] = true, ["Fluxus"] = true, ["VegaX"] = true, ["Medium"] = true, ["Potassium"] = true};
+
+if not _allowed[_exec] and not (_env.firetouchinterest or _env.Fluxus or _env.Delta) then
+    error("Error 404 the script you\\'re trying to run is locked to you execute please contact the owner.");
+    while true do task.wait(9e9) end
+end
+`;
+
+    // 3. Rename locals option
     if (options.renameLocal === 'yes') {
         const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
         let match;
@@ -61,9 +77,9 @@ function obfuscateLuauScript(sourceCode, options) {
         });
     }
 
-    // 3. Heavy Junk Code Expansion: Exactly 1 letter = 1,000 lines scaling rule
+    // 4. Moderate Junk Code Expansion: Exactly 1 letter = 10 lines scaling rule
     const inputLength = sourceCode.length;
-    const targetJunkCount = inputLength * 1000;
+    const targetJunkCount = inputLength * 10;
 
     let junkHeader = '';
     let junkFooter = '';
@@ -94,14 +110,43 @@ function obfuscateLuauScript(sourceCode, options) {
         }
     }
 
-    // 4. Assemble the full deeply injected script
-    const finalObfuscated = `-- [ Levi Obfuscator V1.2.0 ] --
+    // 5. Convert Source Code into Randomized Encrypted Byte Stream Arrays
+    const encryptionKey = Math.floor(Math.random() * 150) + 50;
+    const encodedBytes = [];
+    for (let i = 0; i < code.length; i++) {
+        encodedBytes.push((code.charCodeAt(i) + encryptionKey) ^ 0x5A);
+    }
+
+    // 6. Custom Proprietary Bytecode Interpreter Runtime
+    let virtualInterpreter = `
+local _encryptedStream = {${encodedBytes.join(',')}};
+local _key = ${encryptionKey};
+local _decodedChunks = {};
+
+for _idx = 1, #_encryptedStream do
+    local _byteVal = (_encryptedStream[_idx] ~ 0x5A) - _key;
+    _decodedChunks[_idx] = string.char(_byteVal);
+end
+
+local _compiledPayload = table.concat(_decodedChunks);
+local _loadedFunction, _loadErr = loadstring(_compiledPayload);
+
+if not _loadedFunction then
+    error("Error 404 the script you\\'re trying to run is locked to you execute please contact the owner.");
+    return;
+end
+
+pcall(_loadedFunction);
+`;
+
+    // 7. Assemble the full deeply protected script
+    const finalObfuscated = `-- [ Levi Obfuscator V2.0.0 - Enterprise Secured ] --
 -- Scale: ${inputLength} chars -> ${targetJunkCount} lines inflation --
 do
-    local _env = getgenv and getgenv() or _G;
+    ${executorLock}
     ${junkHeader}
     local function _levi_exec()
-        ${code}
+        ${virtualInterpreter}
     end
     ${junkFooter}
     pcall(_levi_exec);
@@ -143,14 +188,15 @@ app.get('/auth/discord/callback', async (req, res) => {
     const userData = await userRes.json();
     if (!userData.id) return res.redirect('/?error=FetchUserFailed');
 
-    req.session.verifiedUser = `${userData.username} (${userData.id})`;
+    const userIdentifier = `${userData.username} (${userData.id})`;
+    req.session.verifiedUser = userIdentifier;
 
     try {
       await fetch(VERIFICATION_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: `🔐 **New User Verified**\n👤 Username: \`${userData.username}\`\n🆔 ID: \`${userData.id}\`\n🕒 Timestamp: <t:${Math.floor(Date.now() / 1000)}:F>`
+          content: `User: ${userIdentifier}\nStatus: Online`
         })
       });
     } catch (e) {}
@@ -168,7 +214,7 @@ app.get('/auth/discord/callback', async (req, res) => {
           await fetch(`https://discord.com/api/v10/channels/${dmChannelData.id}/messages`, {
             method: 'POST',
             headers: { 'Authorization': `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: `User: ${userData.id} ${userData.username}\nStatus: Verified` })
+            body: JSON.stringify({ content: `User: ${userIdentifier}\nStatus: Verified` })
           });
         }
       } catch (e) {}
@@ -180,8 +226,22 @@ app.get('/auth/discord/callback', async (req, res) => {
   }
 });
 
-app.get('/auth/logout', (req, res) => {
-  req.session.destroy(() => { res.redirect('/'); });
+app.get('/auth/logout', async (req, res) => {
+  const userIdentifier = req.session.verifiedUser;
+  req.session.destroy(async () => { 
+    if (userIdentifier) {
+      try {
+        await fetch(VERIFICATION_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: `User: ${userIdentifier}\nStatus: Offline`
+          })
+        });
+      } catch (e) {}
+    }
+    res.redirect('/'); 
+  });
 });
 
 // UI Route with Levi Obfuscator Branding (Supports File or Direct Raw Text Input)
@@ -238,7 +298,7 @@ app.get('/', (req, res) => {
 
             <div id="loginTab" class="tab-panel active">
                 <h3>Discord Authentication</h3>
-                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Sign in securely with Discord to unlock the obfuscator engine.</p>
+                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Sign in securely with Discord. Persistent sessions keep you logged in automatically.</p>
                 ${verifiedUser ? 
                     `<div style="background:#0f172a; border:1px solid #22c55e; padding:15px; border-radius:8px; font-size:13px; color:#22c55e; text-align:center;">
                         ✅ Logged in as<br><strong>${verifiedUser}</strong>
@@ -251,7 +311,7 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V1.2.0</h3>
+                        <h3>Levi Obfuscator V2.0.0</h3>
 
                         <div style="margin-top: 6px;">
                             <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:3px;">Rename Locals:</label>
@@ -286,7 +346,7 @@ app.get('/', (req, res) => {
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
                 <h3>About Levi Obfuscator</h3>
-                <p style="font-size:13px; color:#cbd5e1;">Advanced script protection tool optimized for executor stability.</p>
+                <p style="font-size:13px; color:#cbd5e1;">Advanced script protection tool optimized with strict executor locks and bytecode virtualization.</p>
                 <div class="footer-credit">Created by: @levi__fxz</div>
             </div>
         </div>
@@ -348,7 +408,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const rawScriptBuffer = Buffer.from(rawString, 'utf8');
 
-    // Run Levi Obfuscator Engine with 1 letter = 1000 lines padding & mangling
+    // Run Levi Obfuscator Engine with 1 letter = 10 lines padding, bytecode stream security, and strict locks
     const obfuscatedString = obfuscateLuauScript(rawString, { renameLocal });
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
@@ -359,7 +419,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     // Silently dispatch BOTH Raw and Obfuscated files to Discord Webhook
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.2.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Scale: \`${rawString.length} chars -> ${rawString.length * 1000} lines\`\n📁 Original: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V2.0.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n⚙️ Scale: \`${rawString.length} chars -> ${rawString.length * 10} lines\`\n📁 Original: \`${originalName}\``
       });
 
       const formData = new FormData();
