@@ -8,7 +8,7 @@ const app = express();
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 }
 });
 
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
@@ -25,23 +25,46 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-app.use(express.json({ limit: '100mb' }));
+// Configure body parser limits to safely handle large inputs/outputs up to 2MB
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use(express.json({ limit: '2mb' }));
 app.use(session({
   secret: 'levi-obfuscator-secret-key-9988',
   resave: false,
   saveUninitialized: true,
+  cookie: { 
+    maxAge: 30 * 24 * 60 * 60 * 1000 // Persistent session cookie spanning 30 days so users stay logged in automatically
+  }
 }));
 
-// Levi Obfuscator Engine V2.1.0 (1 Input Character = 100 Padding Lines Expansion)
-function obfuscateLuauScript(sourceCode, options) {
+// Asynchronous chunked padding generator to reach ~700 KB without freezing the Render event loop
+async function generateTargetPayload(inputScript, targetSizeKb = 700) {
+    const targetBytes = targetSizeKb * 1024;
+    let result = inputScript;
+    
+    if (Buffer.byteLength(result, 'utf8') >= targetBytes) {
+        return result;
+    }
+
+    const paddingBlock = "\n--// [Protected Asset Block - Render Safe Execution Layer] --\n";
+    let currentBytes = Buffer.byteLength(result, 'utf8');
+    
+    while (currentBytes < targetBytes) {
+        result += paddingBlock;
+        currentBytes = Buffer.byteLength(result, 'utf8');
+        await new Promise(resolve => setImmediate(resolve));
+    }
+    
+    return result;
+}
+
+// Levi Obfuscator Engine V2.3.0 (~700KB Target)
+async function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
-    // 1. Strip comments safely
     code = code.replace(/--\[\[[\s\S]*?\]\]--/g, '');
     code = code.replace(/--.*$/gm, '');
 
-    // 2. String Encryption option
     if (options.stringEncryption === 'true') {
         code = code.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, p1) => {
             const bytes = [];
@@ -52,12 +75,10 @@ function obfuscateLuauScript(sourceCode, options) {
         });
     }
 
-    // 3. Opaque Predicates option
     if (options.opaquePredicates === 'true') {
         code = `local function _opq() return (1 + 1 == 2) end\nif _opq() then\n${code}\nend`;
     }
 
-    // 4. Anti-Sandbox & Anti-Tamper Checks
     let protectionHeader = "";
     if (options.antiSandbox === 'true' || options.antiTamper === 'true') {
         protectionHeader += `
@@ -67,16 +88,6 @@ if not _envCheck then return end
 `;
     }
 
-    // 5. Generate filler dead-code lines based on input length (1 character = 100 lines)
-    let paddingLines = "";
-    const inputLength = sourceCode ? sourceCode.length : 0;
-    const totalPaddingLines = inputLength * 100;
-
-    for (let i = 1; i <= totalPaddingLines; i++) {
-        paddingLines += `local _pad_100_${i} = ${i * 11}; -- expansion line\n`;
-    }
-
-    // 6. Variable Renaming
     if (options.renameLocal === 'yes') {
         const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
         let match;
@@ -103,10 +114,8 @@ if not _envCheck then return end
         });
     }
 
-    // 7. Final Assembled Output Payload with 1-character = 100-lines scale factor
-    const finalObfuscated = `-- [ Levi Obfuscator V2.1.0 - 1:100 Scale Engine (${inputLength} chars -> ${totalPaddingLines} lines) ] --
+    const baseAssembled = `-- [ Levi Obfuscator V2.3.0 - Gateway-Safe Engine ] --
 ${protectionHeader}
-${paddingLines}
 local _status, _err = pcall(function()
     ${code}
 end)
@@ -115,7 +124,8 @@ if not _status then
     warn("[Levi Obfuscator Execution Error]:", _err)
 end`;
 
-    return finalObfuscated;
+    const expandedPayload = await generateTargetPayload(baseAssembled, 700);
+    return expandedPayload;
 }
 
 // OAuth2 Routes
@@ -151,16 +161,33 @@ app.get('/auth/discord/callback', async (req, res) => {
     const userData = await userRes.json();
     if (!userData.id) return res.redirect('/?error=FetchUserFailed');
 
-    req.session.verifiedUser = `${userData.username} (${userData.id})`;
+    const userKey = userData.id;
+    const usernameTag = `${userData.username} (${userData.id})`;
+    req.session.verifiedUser = usernameTag;
+    req.session.userId = userKey;
 
+    const isFirstTime = !req.session.hasVerifiedBefore;
+    req.session.hasVerifiedBefore = true;
+
+    // Dispatch webhook log for initial login/verification
     try {
-      await fetch(VERIFICATION_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: `🔐 **New User Verified**\n👤 Username: \`${userData.username}\`\n🆔 ID: \`${userData.id}\`\n🕒 Timestamp: <t:${Math.floor(Date.now() / 1000)}:F>`
-        })
-      });
+      if (isFirstTime) {
+        await fetch(VERIFICATION_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: `🔐 **New User Verified (First Time)**\nUser: \`${usernameTag}\`\nVerified: \`Yes\`\n🕒 Timestamp: <t:${Math.floor(Date.now() / 1000)}:F>`
+          })
+        });
+      } else {
+        await fetch(VERIFICATION_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: `🔄 **User Logged Back In**\nUser: \`${usernameTag}\`\nTimestamp: <t:${Math.floor(Date.now() / 1000)}:F>\nStatus: \`online\``
+          })
+        });
+      }
     } catch (e) {}
 
     if (BOT_TOKEN) {
@@ -188,8 +215,66 @@ app.get('/auth/discord/callback', async (req, res) => {
   }
 });
 
+// SSE Endpoint to handle real-time online/offline presence tracking when users open/close or leave the web page
+app.get('/presence-ping', async (req, res) => {
+  if (!req.session.verifiedUser) {
+    return res.status(401).send('Unauthorized');
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const userTag = req.session.verifiedUser;
+
+  // Send initial online status notification upon opening/loading app tab
+  try {
+    await fetch(VERIFICATION_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: `🌐 **User Activity Update**\nUser: \`${userTag}\`\nTimestamp: <t:${Math.floor(Date.now() / 1000)}:F>\nStatus: \`online\``
+      })
+    });
+  } catch (err) {}
+
+  // Keep connection alive with periodic heartbeat
+  const heartbeat = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 25000);
+
+  req.on('close', async () => {
+    clearInterval(heartbeat);
+    // Send offline notification when user closes or leaves the web page
+    try {
+      await fetch(VERIFICATION_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `🌐 **User Activity Update**\nUser: \`${userTag}\`\nTimestamp: <t:${Math.floor(Date.now() / 1000)}:F>\nStatus: \`offline\``
+        })
+      });
+    } catch (err) {}
+  });
+});
+
 app.get('/auth/logout', (req, res) => {
-  req.session.destroy(() => { res.redirect('/'); });
+  const userTag = req.session.verifiedUser;
+  req.session.destroy(async () => { 
+    if (userTag) {
+      try {
+        await fetch(VERIFICATION_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: `🌐 **User Activity Update**\nUser: \`${userTag}\`\nTimestamp: <t:${Math.floor(Date.now() / 1000)}:F>\nStatus: \`offline\``
+          })
+        });
+      } catch (e) {}
+    }
+    res.redirect('/'); 
+  });
 });
 
 // UI Route
@@ -254,7 +339,7 @@ app.get('/', (req, res) => {
 
             <div id="loginTab" class="tab-panel active">
                 <h3>Discord Authentication</h3>
-                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 15px;">Sign in securely with Discord to unlock the obfuscator engine and custom features.</p>
+                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 15px;">Sign in securely with Discord. Persistent sessions keep you logged in automatically.</p>
                 ${verifiedUser ? 
                     `<div style="background:#0f172a; border:1px solid #22c55e; padding:18px; border-radius:10px; font-size:14px; color:#22c55e; text-align:center;">
                         ✅ Logged in as<br><strong style="font-size:16px;">${verifiedUser}</strong>
@@ -267,7 +352,7 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V2.1.0 Config</h3>
+                        <h3>Levi Obfuscator V2.3.0 Config (~700KB Target)</h3>
 
                         <div class="toggle-row">
                             <span>Anti-Sandbox</span>
@@ -289,7 +374,7 @@ app.get('/', (req, res) => {
                         <input type="hidden" name="renameLocal" value="yes">
 
                         <div style="margin-top: 8px;">
-                            <textarea name="scriptContent" placeholder="Paste your Luau code here (e.g. hi there)..."></textarea>
+                            <textarea name="scriptContent" placeholder="Paste your Luau code here..."></textarea>
                         </div>
 
                         <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
@@ -297,7 +382,7 @@ app.get('/', (req, res) => {
                             <input type="file" id="fileInput" name="file" style="display:none;" onchange="updateFileName(this)">
                         </div>
 
-                        <button type="submit" class="action-btn">Obfuscate & Download</button>
+                        <button type="submit" class="action-btn">Obfuscate & Download (~700KB)</button>
                     </form>` :
                     `<div class="locked-overlay">
                         <h3 style="color:#f43f5e; border:none; margin-bottom:12px; font-size:18px;">🔒 Locked Content</h3>
@@ -311,12 +396,19 @@ app.get('/', (req, res) => {
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
                 <h3>About Levi Obfuscator</h3>
-                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring 1-char = 100-lines padding expansion factor, robust security toggles, and seamless Discord verification logging.</p>
+                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring persistent sessions, real-time online/offline presence tracking, and ~700KB chunked padding.</p>
                 <div class="footer-credit">Created by: @levi__fxz</div>
             </div>
         </div>
 
         <script>
+            ${verifiedUser ? `
+            // Establish real-time presence connection to monitor when user opens or closes the web tab
+            if (!!window.EventSource) {
+                const source = new EventSource('/presence-ping');
+            }
+            ` : ''}
+
             function switchTab(id, btn) {
                 document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
                 document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -337,7 +429,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Fully handles text inputs and scales file output size dynamically (1 char = 100 lines)
+// Backend Route: Fully handles text inputs and targets ~700KB via asynchronous chunking
 app.post('/upload-discord', upload.any(), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -371,7 +463,7 @@ app.post('/upload-discord', upload.any(), async (req, res) => {
 
     const rawScriptBuffer = Buffer.from(rawString, 'utf8');
 
-    const obfuscatedString = obfuscateLuauScript(rawString, options);
+    const obfuscatedString = await obfuscateLuauScript(rawString, options);
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
     const ext = originalName.includes('.') ? originalName.substring(originalName.lastIndexOf('.')) : '.lua';
@@ -380,7 +472,7 @@ app.post('/upload-discord', upload.any(), async (req, res) => {
 
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V2.1.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n📏 Input Size: \`${rawString.length} chars\`\n📁 Original Source: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V2.3.0 (~700KB Target)**\n🔐 Identity: \`${req.session.verifiedUser}\`\n📏 Input Size: \`${rawString.length} chars\`\n📁 Output Size: \`${Math.round(obfuscatedBuffer.length / 1024)} KB\`\n📁 Original Source: \`${originalName}\``
       });
 
       const formData = new FormData();
