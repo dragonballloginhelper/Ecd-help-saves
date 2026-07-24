@@ -186,7 +186,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route with Fully Expanded Modern Layout and Feature Panel
+// UI Route
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -345,7 +345,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Processes script with custom letter/number settings, downloads result, and logs to Discord
+// Backend Route: Fixed to read multipart body parameters safely
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -355,7 +355,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const file = req.file;
     const directText = req.body.scriptContent;
     
-    // Capture settings and custom inputs from dashboard
+    // Capture settings and custom inputs properly from multipart form body
     const options = {
       renameLocal: 'yes',
       customLetter1: req.body.customLetter1 || '',
