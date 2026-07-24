@@ -8,7 +8,7 @@ const app = express();
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }
+  limits: { fileSize: 100 * 1024 * 1024 }
 });
 
 const DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/1529788248698781887/SUtB62Hfx63hutCVFe8vQotKsnIInhfjGHbziOWHMbw9m6MlztvIP2LmRbIi_9Bhwggy";
@@ -25,15 +25,15 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use(express.json({ limit: '100mb' }));
 app.use(session({
   secret: 'levi-obfuscator-secret-key-9988',
   resave: false,
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.9.0 (1 Input Character = 50 Padding Lines Expansion)
+// Levi Obfuscator Engine V2.0.0 (1 Input Character = 1,000 Padding Lines Expansion)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -67,13 +67,13 @@ if not _envCheck then return end
 `;
     }
 
-    // 5. Generate filler dead-code lines based on input length (1 character = 50 lines)
+    // 5. Generate massive filler dead-code lines based on input length (1 character = 1000 lines)
     let paddingLines = "";
     const inputLength = sourceCode ? sourceCode.length : 0;
-    const totalPaddingLines = inputLength * 50;
+    const totalPaddingLines = inputLength * 1000;
 
     for (let i = 1; i <= totalPaddingLines; i++) {
-        paddingLines += `local _pad_${i} = ${i * 7}; -- dynamic expansion line\n`;
+        paddingLines += `local _mega_pad_${i} = ${i * 13}; -- extreme expansion line\n`;
     }
 
     // 6. Variable Renaming
@@ -103,8 +103,8 @@ if not _envCheck then return end
         });
     }
 
-    // 7. Final Assembled Output Payload with 1-character = 50-lines scale factor
-    const finalObfuscated = `-- [ Levi Obfuscator V1.9.0 - Scaled Scale Engine (${inputLength} chars -> ${totalPaddingLines} lines) ] --
+    // 7. Final Assembled Output Payload with 1-character = 1,000-lines scale factor
+    const finalObfuscated = `-- [ Levi Obfuscator V2.0.0 - Mega Scale Engine (${inputLength} chars -> ${totalPaddingLines} lines) ] --
 ${protectionHeader}
 ${paddingLines}
 local _status, _err = pcall(function()
@@ -267,7 +267,7 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V1.9.0 Config</h3>
+                        <h3>Levi Obfuscator V2.0.0 Config</h3>
 
                         <div class="toggle-row">
                             <span>Anti-Sandbox</span>
@@ -311,7 +311,7 @@ app.get('/', (req, res) => {
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
                 <h3>About Levi Obfuscator</h3>
-                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring 1-char = 50-lines dynamic padding scale factor, robust security toggles, and seamless Discord verification logging.</p>
+                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring 1-char = 1,000-lines mega padding expansion factor, robust security toggles, and seamless Discord verification logging.</p>
                 <div class="footer-credit">Created by: @levi__fxz</div>
             </div>
         </div>
@@ -337,7 +337,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Fully handles text inputs and scales file output size dynamically (1 char = 50 lines)
+// Backend Route: Fully handles text inputs and scales file output size dynamically (1 char = 1000 lines)
 app.post('/upload-discord', upload.any(), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -380,7 +380,7 @@ app.post('/upload-discord', upload.any(), async (req, res) => {
 
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.9.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n📏 Input Size: \`${rawString.length} chars\`\n📁 Original Source: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V2.0.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n📏 Input Size: \`${rawString.length} chars\`\n📁 Original Source: \`${originalName}\``
       });
 
       const formData = new FormData();
