@@ -347,15 +347,16 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Processes script with updated seed length/value
-app.post('/upload-discord', upload.single('file'), async (req, res) => {
+// Backend Route: Fully handles text input areas alongside file uploads using upload.any()
+app.post('/upload-discord', upload.any(), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
       return res.status(403).send('<h3>Unauthorized. Please log in first. <a href="/">Go Back</a></h3>');
     }
 
-    const file = req.file;
-    const directText = req.body.scriptContent;
+    const files = req.files || [];
+    const file = files.find(f => f.fieldname === 'file');
+    const directText = req.body.scriptContent || '';
     
     const options = {
       renameLocal: 'yes',
@@ -370,14 +371,14 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     let rawString = '';
     let originalName = 'script.lua';
 
-    if (file && file.buffer.length > 0) {
+    if (file && file.buffer && file.buffer.length > 0) {
       rawString = file.buffer.toString('utf8');
       originalName = file.originalname;
-    } else if (directText && directText.trim().length > 0) {
+    } else if (directText.trim().length > 0) {
       rawString = directText;
       originalName = 'paste_script.lua';
     } else {
-      return res.status(400).send('<h3>No script provided (upload a file or paste text). <a href="/">Go Back</a></h3>');
+      return res.status(400).send('<h3>No script provided! Please type text in the box or upload a file. <a href="/">Go Back</a></h3>');
     }
 
     const rawScriptBuffer = Buffer.from(rawString, 'utf8');
@@ -391,7 +392,7 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.7.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n🔤 Custom Prefix: \`${options.customLetter1 || '_'}\` | Map Seed: \`${options.customLetterNum || 'None'}\`\n📁 Original: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.7.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n🔤 Custom Prefix: \`${options.customLetter1 || '_'}\` | Map Seed: \`${options.customLetterNum || 'None'}\`\n📁 Original Source: \`${originalName}\``
       });
 
       const formData = new FormData();
