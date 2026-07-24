@@ -33,7 +33,7 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.7.0 (Custom Token Prefix & Full Numeric Offset Integration)
+// Levi Obfuscator Engine V1.8.0 (Removed custom configuration inputs, fixed 50-char padding default)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -67,18 +67,13 @@ if not _envCheck then return end
 `;
     }
 
-    // 5. Variable Renaming with Full Numeric Offset Support (Max Length 8)
+    // 5. Variable Renaming with Fixed Default 50-Character Offset Padding
     if (options.renameLocal === 'yes') {
         const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
         let match;
         const varMap = new Map();
         
-        // Parse custom configurations
-        const customPrefix = (options.customLetter1 && options.customLetter1.trim().length > 0) ? options.customLetter1.trim().charAt(0) : '_';
-        
-        // Parse Input 2 as a full integer value instead of truncating to 1 character
-        const customNumMap = (options.customLetterNum && !isNaN(options.customLetterNum.trim())) ? parseInt(options.customLetterNum.trim(), 10) : 1;
-        let counter = customNumMap * 10; // Uses full number as the offset seed multiplier
+        let counter = 50; // Default offset scale multiplier set to 50 characters/bytes
         
         const protectedKeywords = new Set([
             'true', 'false', 'nil', 'self', 
@@ -90,7 +85,7 @@ if not _envCheck then return end
         while ((match = localRegex.exec(code)) !== null) {
             const originalName = match[1];
             if (!varMap.has(originalName) && !protectedKeywords.has(originalName)) {
-                varMap.set(originalName, `${customPrefix}0x` + (counter++).toString(16).toUpperCase());
+                varMap.set(originalName, `_0x` + (counter++).toString(16).toUpperCase());
             }
         }
 
@@ -101,7 +96,7 @@ if not _envCheck then return end
     }
 
     // 6. Final Assembled Output Payload
-    const finalObfuscated = `-- [ Levi Obfuscator V1.7.0 - Custom Configured Engine ] --
+    const finalObfuscated = `-- [ Levi Obfuscator V1.8.0 - Streamlined Engine ] --
 ${protectionHeader}
 local _status, _err = pcall(function()
     ${code}
@@ -188,7 +183,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route (Input 2 max set to 8)
+// UI Route (Removed A and B custom inputs grid entirely)
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -213,14 +208,11 @@ app.get('/', (req, res) => {
             .tab-panel { display: none; text-align: left; }
             .tab-panel.active { display: block; }
             h3 { font-size: 15px; color: #f43f5e; margin-top: 0; margin-bottom: 12px; border-bottom: 1px solid rgba(244, 63, 94, 0.2); padding-bottom: 6px; }
-            input[type="text"], textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: none; box-sizing: border-box; font-size: 14px; }
-            input[type="text"], textarea { background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-family: monospace; }
-            input[type="text"]:focus, textarea:focus { border-color: #f43f5e; outline: none; box-shadow: 0 0 8px rgba(244, 63, 94, 0.3); }
+            textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: none; box-sizing: border-box; font-size: 14px; }
+            textarea { background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-family: monospace; }
+            textarea:focus { border-color: #f43f5e; outline: none; box-shadow: 0 0 8px rgba(244, 63, 94, 0.3); }
             textarea { resize: vertical; height: 130px; }
             .toggle-row { display: flex; justify-content: space-between; align-items: center; background: #0f172a; border: 1px solid #334155; padding: 10px 15px; border-radius: 10px; margin: 8px 0; font-size: 13px; color: #cbd5e1; }
-            .custom-input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }
-            .custom-input-box { background: #0f172a; border: 1px solid #334155; padding: 10px 12px; border-radius: 10px; font-size: 13px; }
-            .custom-input-box label { color: #f43f5e; display: block; margin-bottom: 4px; font-weight: bold; }
             .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
             .switch input { opacity: 0; width: 0; height: 0; }
             .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 22px; }
@@ -266,18 +258,7 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V1.7.0 Config</h3>
-
-                        <div class="custom-input-grid">
-                            <div class="custom-input-box">
-                                <label>1st (1 Letter):</label>
-                                <input type="text" name="customLetter1" maxlength="1" placeholder="_" style="margin:0; padding:8px; text-align:center;">
-                            </div>
-                            <div class="custom-input-box">
-                                <label>2nd (Seed Number):</label>
-                                <input type="text" name="customLetterNum" maxlength="8" placeholder="10" style="margin:0; padding:8px; text-align:center;">
-                            </div>
-                        </div>
+                        <h3>Levi Obfuscator V1.8.0 Config</h3>
 
                         <div class="toggle-row">
                             <span>Anti-Sandbox</span>
@@ -299,7 +280,7 @@ app.get('/', (req, res) => {
                         <input type="hidden" name="renameLocal" value="yes">
 
                         <div style="margin-top: 8px;">
-                            <textarea name="scriptContent" placeholder="Paste your Luau code here..."></textarea>
+                            <textarea name="scriptContent" placeholder="Paste your Luau code here (e.g. hi there)..."></textarea>
                         </div>
 
                         <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
@@ -321,7 +302,7 @@ app.get('/', (req, res) => {
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
                 <h3>About Levi Obfuscator</h3>
-                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring custom token prefix mapping, robust security toggles, and seamless Discord verification logging.</p>
+                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring automated variable offset padding, robust security toggles, and seamless Discord verification logging.</p>
                 <div class="footer-credit">Created by: @levi__fxz</div>
             </div>
         </div>
@@ -347,7 +328,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Fully handles text input areas alongside file uploads using upload.any()
+// Backend Route: Fully streamlined using upload.any() without custom A/B inputs
 app.post('/upload-discord', upload.any(), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -360,8 +341,6 @@ app.post('/upload-discord', upload.any(), async (req, res) => {
     
     const options = {
       renameLocal: 'yes',
-      customLetter1: req.body.customLetter1 || '',
-      customLetterNum: req.body.customLetterNum || '',
       antiSandbox: req.body.antiSandbox || 'false',
       antiTamper: req.body.antiTamper || 'false',
       opaquePredicates: req.body.opaquePredicates || 'false',
@@ -392,7 +371,7 @@ app.post('/upload-discord', upload.any(), async (req, res) => {
 
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.7.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n🔤 Custom Prefix: \`${options.customLetter1 || '_'}\` | Map Seed: \`${options.customLetterNum || 'None'}\`\n📁 Original Source: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.8.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n📁 Original Source: \`${originalName}\``
       });
 
       const formData = new FormData();
