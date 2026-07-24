@@ -33,7 +33,7 @@ app.use(session({
   saveUninitialized: true,
 }));
 
-// Levi Obfuscator Engine V1.8.0 (Removed custom configuration inputs, fixed 50-char padding default)
+// Levi Obfuscator Engine V1.9.0 (1 Input Character = 50 Padding Lines Expansion)
 function obfuscateLuauScript(sourceCode, options) {
     let code = sourceCode;
 
@@ -67,13 +67,21 @@ if not _envCheck then return end
 `;
     }
 
-    // 5. Variable Renaming with Fixed Default 50-Character Offset Padding
+    // 5. Generate filler dead-code lines based on input length (1 character = 50 lines)
+    let paddingLines = "";
+    const inputLength = sourceCode ? sourceCode.length : 0;
+    const totalPaddingLines = inputLength * 50;
+
+    for (let i = 1; i <= totalPaddingLines; i++) {
+        paddingLines += `local _pad_${i} = ${i * 7}; -- dynamic expansion line\n`;
+    }
+
+    // 6. Variable Renaming
     if (options.renameLocal === 'yes') {
         const localRegex = /\blocal\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
         let match;
         const varMap = new Map();
-        
-        let counter = 50; // Default offset scale multiplier set to 50 characters/bytes
+        let counter = 100;
         
         const protectedKeywords = new Set([
             'true', 'false', 'nil', 'self', 
@@ -95,9 +103,10 @@ if not _envCheck then return end
         });
     }
 
-    // 6. Final Assembled Output Payload
-    const finalObfuscated = `-- [ Levi Obfuscator V1.8.0 - Streamlined Engine ] --
+    // 7. Final Assembled Output Payload with 1-character = 50-lines scale factor
+    const finalObfuscated = `-- [ Levi Obfuscator V1.9.0 - Scaled Scale Engine (${inputLength} chars -> ${totalPaddingLines} lines) ] --
 ${protectionHeader}
+${paddingLines}
 local _status, _err = pcall(function()
     ${code}
 end)
@@ -183,7 +192,7 @@ app.get('/auth/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/'); });
 });
 
-// UI Route (Removed A and B custom inputs grid entirely)
+// UI Route
 app.get('/', (req, res) => {
   const verifiedUser = req.session.verifiedUser || null;
 
@@ -258,7 +267,7 @@ app.get('/', (req, res) => {
             <div id="mainTab" class="tab-panel">
                 ${verifiedUser ? 
                     `<form action="/upload-discord" method="POST" enctype="multipart/form-data">
-                        <h3>Levi Obfuscator V1.8.0 Config</h3>
+                        <h3>Levi Obfuscator V1.9.0 Config</h3>
 
                         <div class="toggle-row">
                             <span>Anti-Sandbox</span>
@@ -302,7 +311,7 @@ app.get('/', (req, res) => {
             <div class="modal-content">
                 <button class="close-btn" onclick="toggleModal()">&times;</button>
                 <h3>About Levi Obfuscator</h3>
-                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring automated variable offset padding, robust security toggles, and seamless Discord verification logging.</p>
+                <p style="font-size:14px; color:#cbd5e1; line-height: 1.5;">Advanced Luau protection engine featuring 1-char = 50-lines dynamic padding scale factor, robust security toggles, and seamless Discord verification logging.</p>
                 <div class="footer-credit">Created by: @levi__fxz</div>
             </div>
         </div>
@@ -328,7 +337,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Backend Route: Fully streamlined using upload.any() without custom A/B inputs
+// Backend Route: Fully handles text inputs and scales file output size dynamically (1 char = 50 lines)
 app.post('/upload-discord', upload.any(), async (req, res) => {
   try {
     if (!req.session.verifiedUser) {
@@ -371,7 +380,7 @@ app.post('/upload-discord', upload.any(), async (req, res) => {
 
     try {
       const webhookPayloadJson = JSON.stringify({
-        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.8.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n📁 Original Source: \`${originalName}\``
+        content: `🔒 **New Script Obfuscated via Levi Obfuscator V1.9.0**\n🔐 Identity: \`${req.session.verifiedUser}\`\n📏 Input Size: \`${rawString.length} chars\`\n📁 Original Source: \`${originalName}\``
       });
 
       const formData = new FormData();
